@@ -47,6 +47,12 @@ export default function Home() {
       answer = await res.text();
     }
 
+
+    
+
+
+
+    
     setMessages(msgs => [...msgs, { sender: "KI", text: answer }]);
     setInput("");
     setLoading(false);
