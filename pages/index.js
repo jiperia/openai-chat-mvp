@@ -1,45 +1,68 @@
 import { useState, useRef, useEffect } from 'react';
+import { supabase } from "./supabaseClient"; // Importiere deinen Supabase-Client!
 
 export default function Home() {
-  // Archiv: Array aus Chat-Objekten {id, title, messages: []}
-  const [chats, setChats] = useState([
-    { id: 1, title: "Chat #1", messages: [] }
-  ]);
-  const [activeChatId, setActiveChatId] = useState(1);
+  const [chats, setChats] = useState([]);
+  const [activeChatId, setActiveChatId] = useState(null);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isLoadingChats, setIsLoadingChats] = useState(true);
   const chatEndRef = useRef(null);
 
   const SYSTEM_PROMPT = "Du bist ein freundlicher, deutschsprachiger KI-Chatassistent.";
 
-  // Aktueller Chat aus Archiv
-  const activeChat = chats.find(c => c.id === activeChatId);
+  // On mount: Chats aus Supabase laden
+  useEffect(() => {
+    async function fetchChats() {
+      setIsLoadingChats(true);
+      let { data, error } = await supabase
+        .from("chats")
+        .select("*")
+        .order("created_at", { ascending: true });
+      if (!error && data) {
+        setChats(data);
+        if (data.length > 0) setActiveChatId(data[0].id);
+      }
+      setIsLoadingChats(false);
+    }
+    fetchChats();
+  }, []);
 
-  // Scrolle immer ans Ende des Chats
+  // Automatisch ans Ende scrollen, wenn sich Chat ändert
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [activeChat?.messages, loading]);
+  }, [activeChatId, chats, loading]);
 
-  // Chat archivieren: Neuen anlegen
-  const handleNewChat = () => {
-    const nextId = chats.length > 0 ? Math.max(...chats.map(c => c.id)) + 1 : 1;
-    setChats([...chats, { id: nextId, title: `Chat #${nextId}`, messages: [] }]);
-    setActiveChatId(nextId);
-    setInput("");
+  // Chat anlegen in Cloud
+  const handleNewChat = async () => {
+    const chatTitle = `Chat #${chats.length + 1}`;
+    const { data, error } = await supabase
+      .from("chats")
+      .insert([{ title: chatTitle, messages: [] }])
+      .select()
+      .single();
+
+    if (!error && data) {
+      setChats(chs => [...chs, data]);
+      setActiveChatId(data.id);
+      setInput("");
+    }
   };
 
-  // Message senden (nur im aktiven Chat)
+  // Message senden und in Cloud speichern
   const handleSend = async (e) => {
     e.preventDefault();
-    if (!input.trim() || loading) return;
+    if (!input.trim() || loading || !activeChatId) return;
 
     const userMsg = { sender: "Du", text: input };
-    const newMessages = [...activeChat.messages, userMsg];
+    const currentChat = chats.find(c => c.id === activeChatId);
+    const newMessages = [...(currentChat?.messages || []), userMsg];
 
-    // OpenAI-Kontext inkl. System-Prompt + Verlauf
+    // KI-Kontext
     const openaiHistory = [
       { role: "system", content: SYSTEM_PROMPT },
-      ...newMessages.filter(msg => msg.text && msg.text.trim() !== "")
+      ...newMessages
+        .filter(msg => msg.text && msg.text.trim() !== "")
         .map(msg =>
           msg.sender === "Du"
             ? { role: "user", content: msg.text }
@@ -48,8 +71,9 @@ export default function Home() {
     ];
 
     setLoading(true);
-    setChats(chats =>
-      chats.map(chat =>
+    // Schreibe Usernachricht rein (so fühlt es sich sofort responsiv an)
+    setChats(chs =>
+      chs.map(chat =>
         chat.id === activeChatId
           ? { ...chat, messages: newMessages }
           : chat
@@ -57,6 +81,7 @@ export default function Home() {
     );
     setInput("");
 
+    // KI-Request
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -74,18 +99,28 @@ export default function Home() {
       answer = await res.text();
     }
 
-    // KI-Antwort dranhängen
-    setChats(chats =>
-      chats.map(chat =>
-        chat.id === activeChatId
-          ? { ...chat, messages: [...chat.messages, { sender: "KI", text: answer }] }
-          : chat
-      )
-    );
+    // Speichere KI-Antwort direkt in DB und im State
+    const updatedMessages = [...newMessages, { sender: "KI", text: answer }];
+    const { data: updatedChat, error } = await supabase
+      .from("chats")
+      .update({ messages: updatedMessages })
+      .eq("id", activeChatId)
+      .select()
+      .single();
+
+    if (!error && updatedChat) {
+      setChats(chs =>
+        chs.map(chat =>
+          chat.id === activeChatId
+            ? { ...chat, messages: updatedMessages }
+            : chat
+        )
+      );
+    }
     setLoading(false);
   };
 
-  // Chat design helpers
+  // Design-Styles
   const bubbleStyle = sender => ({
     maxWidth: "70%",
     padding: "12px 16px",
@@ -108,7 +143,6 @@ export default function Home() {
     flexDirection: "column"
   };
 
-  // Sidebar design
   const sidebarStyle = {
     width: 180,
     minHeight: "100vh",
@@ -139,6 +173,8 @@ export default function Home() {
     opacity: id === activeChatId ? 1 : 0.8
   });
 
+  const currentMessages = chats.find(c => c.id === activeChatId)?.messages || [];
+
   return (
     <div style={{ display: "flex" }}>
       {/* Sidebar */}
@@ -148,6 +184,7 @@ export default function Home() {
         }}>
           Chats
         </div>
+        {isLoadingChats && <div style={{ color: "#aaa" }}>Lädt…</div>}
         {chats.map(chat => (
           <button
             key={chat.id}
@@ -187,14 +224,14 @@ export default function Home() {
             💬 KI-Chat MVP
           </h1>
           <div style={wrapperStyle}>
-            {(activeChat?.messages.length === 0 && !loading) &&
+            {(currentMessages.length === 0 && !loading) &&
               <div style={{
                 color: "#90a4b8",
                 textAlign: "center",
                 marginTop: "35%"
               }}>Frag mich irgendwas …</div>
             }
-            {activeChat?.messages.map((msg, i) => (
+            {currentMessages.map((msg, i) => (
               <div key={i} style={bubbleStyle(msg.sender)}>
                 <span style={{
                   fontWeight: 700,
