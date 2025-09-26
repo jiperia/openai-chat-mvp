@@ -1,35 +1,40 @@
 import { useState } from 'react';
 
 export default function Home() {
-  // Starte mit einem leeren Chatverlauf!
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // System-Prompt (bleibt beim KI-Verlauf als Kontext vorne)
+  // Systemprompt bleibt als Einstieg immer bestehen!
   const SYSTEM_PROMPT = "Du bist ein freundlicher, deutschsprachiger KI-Chatassistent.";
 
-  // Handler für Senden
   const handleSend = async (e) => {
     e.preventDefault();
+    // Schutz: Kein leerer Text, kein Doppel-Click!
     if (!input.trim() || loading) return;
 
-    // Neue Usernachricht an Chat anhängen
-    const newMessages = [...messages, { sender: "Du", text: input }];
+    // Neue Usernachricht
+    const userMsg = { sender: "Du", text: input };
+    // Falls text doch leer ist: Schutz
+    if (!userMsg.text || userMsg.text.trim() === "") return;
+
+    const newMessages = [...messages, userMsg];
     setMessages(newMessages);
+    setInput("");
     setLoading(true);
 
-    // Historie für OpenAI zusammenbauen (mit system prompt)
+    // OpenAI-Kontext: Systemprompt + Nachrichten (keine leeren Texte!)
     const openaiHistory = [
       { role: "system", content: SYSTEM_PROMPT },
-      ...newMessages.map(msg =>
-        msg.sender === "Du"
-          ? { role: "user", content: msg.text }
-          : { role: "assistant", content: msg.text }
-      )
+      ...newMessages
+        .filter(msg => msg.text && msg.text.trim() !== "") // FILTER
+        .map(msg =>
+          msg.sender === "Du"
+            ? { role: "user", content: msg.text }
+            : { role: "assistant", content: msg.text }
+        )
     ];
 
-    // API-Request (an eigene API-Route)
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -47,14 +52,7 @@ export default function Home() {
       answer = await res.text();
     }
 
-
-    
-
-
-
-    
     setMessages(msgs => [...msgs, { sender: "KI", text: answer }]);
-    setInput("");
     setLoading(false);
   };
 
@@ -64,13 +62,13 @@ export default function Home() {
       <div style={{
         background: "#fafafa", borderRadius: 8, padding: 16, minHeight: 200, marginBottom: 16
       }}>
+        {messages.length === 0 && !loading &&
+          <div style={{ color: "#888" }}>Frag mich irgendwas ...</div>
+        }
         {messages.map((msg, i) => (
           <div key={i}><b>{msg.sender}:</b> {msg.text}</div>
         ))}
         {loading && <div>Antwort kommt ...</div>}
-        {messages.length === 0 && !loading &&
-          <div style={{ color: "#888" }}>Frag mich irgendwas ...</div>
-        }
       </div>
       <form onSubmit={handleSend} style={{ display: "flex" }}>
         <input
