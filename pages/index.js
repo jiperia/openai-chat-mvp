@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { supabase } from "./supabaseClient"; // Importiere deinen Supabase-Client!
+import { supabase } from "../supabaseClient"; // Importiere deinen Supabase-Client!
 
 export default function Home() {
   const [chats, setChats] = useState([]);
