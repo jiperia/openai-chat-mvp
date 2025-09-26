@@ -21,9 +21,11 @@ export default async function handler(req, res) {
     })
   });
 
-  if (!response.ok) {
-    return res.status(500).json({ error: "OpenAI Fehler" });
-  }
+
+if (!response.ok) {
+  const errorData = await response.text();
+  return res.status(500).json({ error: "OpenAI Fehler: " + errorData });
+}
 
   const data = await response.json();
   // Extrahiere Antworttext:
