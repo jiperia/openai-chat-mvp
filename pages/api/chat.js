@@ -1,12 +1,11 @@
+// pages/api/chat.js
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader('Allow', ['POST']);
     return res.status(405).end(`Method ${req.method} Not Allowed`);
   }
 
-  // Hier muss "history" von vornherein auf einen sinnvollen Default gesetzt sein!
   const { history } = req.body;
-
   if (
     !Array.isArray(history) ||
     history.length === 0 ||
@@ -25,8 +24,10 @@ export default async function handler(req, res) {
       "Authorization": `Bearer ${OPENAI_API_KEY}`
     },
     body: JSON.stringify({
-      model: "gpt-3.5-turbo",
-      messages: history
+      model: "gpt-4o-mini",           // <- statt gpt-3.5-turbo
+      messages: history,
+      temperature: 0.2,
+      max_tokens: 800
     })
   });
 
@@ -37,6 +38,5 @@ export default async function handler(req, res) {
 
   const data = await response.json();
   const answer = data.choices?.[0]?.message?.content || "Keine Antwort";
-
   res.status(200).json({ answer });
 }
