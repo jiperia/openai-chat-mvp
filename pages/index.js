@@ -14,7 +14,6 @@ export default function Home() {
 
   const SYSTEM_PROMPT = 'Du bist ein freundlicher, deutschsprachiger KI-Chatassistent.';
 
-  // ---------- Auth ----------
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUser(data?.user ?? null));
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -23,22 +22,16 @@ export default function Home() {
     return () => listener?.subscription?.unsubscribe?.();
   }, []);
 
-  // ---------- Chats laden (absteigend, neueste oben) ----------
   useEffect(() => {
     async function fetchChats() {
       setIsLoadingChats(true);
-      if (!user) {
-        setChats([]);
-        setIsLoadingChats(false);
-        return;
-      }
-      const { data, error } = await supabase
+      if (!user) { setChats([]); setIsLoadingChats(false); return; }
+      const { data } = await supabase
         .from('chats')
         .select('*')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
-
-      if (!error && data) {
+      if (data) {
         setChats(data);
         if (data.length > 0) setActiveChatId(data[0].id);
       }
@@ -51,81 +44,73 @@ export default function Home() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeChatId, chats, loading]);
 
-  // ---------- Titel-Helper ----------
+  // ---- Title helpers ----
   function simpleTitleFromText(text, maxWords = 7) {
     if (!text) return 'Neuer Chat';
-    let s = text
-      .replace(/\s+/g, ' ')
-      .replace(/\[[^\]]*\]|\([^\)]*\)/g, '')
-      .replace(/https?:\/\/\S+/g, '')
-      .trim();
-    const words = s.split(' ').slice(0, maxWords).join(' ');
-    s = words.replace(/[.,;:!?-]+$/g, '');
+    let s = text.replace(/\s+/g, ' ').replace(/\[[^\]]*\]|\([^\)]*\)/g, '').replace(/https?:\/\/\S+/g, '').trim();
+    s = s.split(' ').slice(0, maxWords).join(' ').replace(/[.,;:!?-]+$/g, '');
     return s.charAt(0).toUpperCase() + s.slice(1);
   }
-
   async function generateTitleSmart(firstMessage) {
     try {
       const res = await fetch('/api/generateTitle', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt:
-            `Erzeuge einen extrem kurzen, beschreibenden deutschen Chat-Titel (max. 6 Wörter, keine Anführungszeichen, kein Punkt) aus dieser ersten Nachricht:\n\n"${firstMessage}"`
-        })
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: `Erzeuge einen extrem kurzen, prägnanten deutschen Chat-Titel (max. 6 Wörter, keine Anführungszeichen, kein Punkt) aus dieser ersten Nachricht:\n\n"${firstMessage}"` })
       });
       if (!res.ok) throw new Error('no 200');
       const { title } = await res.json();
-      const cleaned = (title || '').toString().trim();
-      return cleaned || simpleTitleFromText(firstMessage);
-    } catch {
-      return simpleTitleFromText(firstMessage);
-    }
+      return (title || '').trim() || simpleTitleFromText(firstMessage);
+    } catch { return simpleTitleFromText(firstMessage); }
   }
-
   async function ensureTitleForChat(chatId, firstUserMessageText) {
     const chat = chats.find(c => c.id === chatId);
     if (!chat) return;
-
-    const isPlaceholder =
-      !chat.title ||
-      chat.title === 'Neuer Chat' ||
-      /^Chat\s*#\d+$/i.test(chat.title);
-
+    const isPlaceholder = !chat.title || chat.title === 'Neuer Chat' || /^Chat\s*#\d+$/i.test(chat.title);
     const hadNoMessages = (chat.messages?.length ?? 0) === 0;
-
     if (hadNoMessages && isPlaceholder && firstUserMessageText?.trim()) {
       const newTitle = await generateTitleSmart(firstUserMessageText);
-      const { data: updated, error } = await supabase
-        .from('chats')
-        .update({ title: newTitle })
-        .eq('id', chatId)
-        .select()
-        .single();
+      const { data: updated } = await supabase.from('chats').update({ title: newTitle }).eq('id', chatId).select().single();
+      if (updated) setChats(prev => prev.map(c => (c.id === chatId ? { ...c, title: newTitle } : c)));
+    }
+  }
 
-      if (!error && updated) {
-        setChats(prev => prev.map(c => (c.id === chatId ? { ...c, title: newTitle } : c)));
+  // ---- CRUD Buttons (rename/delete/share) ----
+  async function handleRenameChat(chatId) {
+    const current = chats.find(c => c.id === chatId);
+    const name = window.prompt('Neuer Titel:', current?.title || '');
+    if (!name || !name.trim()) return;
+    const { data } = await supabase.from('chats').update({ title: name.trim() }).eq('id', chatId).select().single();
+    if (data) setChats(prev => prev.map(c => (c.id === chatId ? { ...c, title: name.trim() } : c)));
+  }
+  async function handleDeleteChat(chatId) {
+    if (!window.confirm('Diesen Chat wirklich löschen?')) return;
+    await supabase.from('chats').delete().eq('id', chatId);
+    setChats(prev => prev.filter(c => c.id !== chatId));
+    if (activeChatId === chatId) setActiveChatId(prev => (chats.find(c => c.id !== chatId)?.id ?? null));
+  }
+  async function handleToggleShare(chatId) {
+    const chat = chats.find(c => c.id === chatId);
+    if (!chat) return;
+    const next = !chat.is_public;
+    const { data } = await supabase.from('chats').update({ is_public: next }).eq('id', chatId).select().single();
+    if (data) {
+      setChats(prev => prev.map(c => (c.id === chatId ? { ...c, is_public: next } : c)));
+      if (next) {
+        const shareUrl = `${window.location.origin}/share/${chat.public_id}`;
+        navigator.clipboard?.writeText(shareUrl).catch(() => {});
+        alert(`Öffentlicher Link kopiert:\n${shareUrl}`);
       }
     }
   }
 
-  // ---------- Neuer Chat ----------
+  // ---- New Chat ----
   const handleNewChat = async () => {
     if (!user) return;
-    const chatTitle = 'Neuer Chat'; // Platzhalter
-    const { data, error } = await supabase
-      .from('chats')
-      .insert([{ title: chatTitle, messages: [], user_id: user.id }])
-      .select()
-      .single();
-    if (!error && data) {
-      setChats(chs => [data, ...chs]); // oben einfügen
-      setActiveChatId(data.id);
-      setInput('');
-    }
+    const { data } = await supabase.from('chats').insert([{ title: 'Neuer Chat', messages: [], user_id: user.id }]).select().single();
+    if (data) { setChats(chs => [data, ...chs]); setActiveChatId(data.id); setInput(''); }
   };
 
-  // ---------- Nachricht senden ----------
+  // ---- STREAMING Send ----
   const handleSend = async (e) => {
     e.preventDefault();
     if (!input.trim() || loading || !activeChatId) return;
@@ -134,334 +119,100 @@ export default function Home() {
     const isFirstMessage = (currentChat?.messages?.length ?? 0) === 0;
 
     const userMsg = { sender: "Du", text: input };
-    const newMessages = [...(currentChat?.messages || []), userMsg];
+    const assistantMsg = { sender: "KI", text: "" }; // Platzhalter für Stream
+
+    const newMessagesLocal = [...(currentChat?.messages || []), userMsg, assistantMsg];
 
     const openaiHistory = [
       { role: "system", content: SYSTEM_PROMPT },
-      ...newMessages
-        .filter(msg => msg.text && msg.text.trim() !== "")
-        .map(msg =>
-          msg.sender === "Du"
-            ? { role: "user", content: msg.text }
-            : { role: "assistant", content: msg.text }
-        )
+      ...newMessagesLocal
+        .filter(m => m.text !== "" || m.sender === "KI") // KI leeres erlaubt als Platzhalter
+        .map(m => m.sender === "Du" ? { role: "user", content: m.text } : (m.text ? { role: "assistant", content: m.text } : null))
+        .filter(Boolean)
     ];
 
     setLoading(true);
-    setChats(chs => chs.map(chat => chat.id === activeChatId ? { ...chat, messages: newMessages } : chat));
+    setChats(chs => chs.map(c => c.id === activeChatId ? { ...c, messages: newMessagesLocal } : c));
     setInput('');
 
-    // Titel nach erster Nachricht setzen (nicht blockierend)
     if (isFirstMessage) ensureTitleForChat(activeChatId, userMsg.text);
 
-    // KI-Antwort holen
-    const res = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ history: openaiHistory })
-    });
+    // Stream konsumieren
+    try {
+      const res = await fetch('/api/chatStream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ history: openaiHistory })
+      });
 
-    let answer = "Fehler bei KI";
-    if (res.ok) {
-      const data = await res.json();
-      answer = data.answer;
-    } else if (res.headers.get("content-type")?.includes("application/json")) {
-      const data = await res.json();
-      answer = data.error || "Fehler bei KI";
-    } else {
-      answer = await res.text();
+      if (!res.ok || !res.body) throw new Error('stream failed');
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let fullText = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+
+        // OpenAI SSE liefert Zeilen wie: "data: {...}\n\n"
+        for (const line of chunk.split('\n')) {
+          if (!line.startsWith('data:')) continue;
+          const payload = line.replace(/^data:\s*/, '').trim();
+          if (payload === '[DONE]') continue;
+          try {
+            const json = JSON.parse(payload);
+            const delta = json?.choices?.[0]?.delta?.content || '';
+            if (delta) {
+              fullText += delta;
+              // letzte Nachricht (KI Platzhalter) aktualisieren
+              setChats(prev =>
+                prev.map(c => {
+                  if (c.id !== activeChatId) return c;
+                  const msgs = [...c.messages];
+                  msgs[msgs.length - 1] = { sender: "KI", text: fullText };
+                  return { ...c, messages: msgs };
+                })
+              );
+            }
+          } catch { /* ignore */ }
+        }
+      }
+
+      // final in Supabase speichern
+      const finalMessages = (() => {
+        const c = chats.find(x => x.id === activeChatId);
+        // falls sich state inzwischen geändert hat, nimm die im State
+        const msgs = (c?.messages || newMessagesLocal).map(m => ({ ...m }));
+        msgs[msgs.length - 1] = { sender: "KI", text: fullText || " " };
+        return msgs;
+      })();
+
+      await supabase.from("chats").update({ messages: finalMessages }).eq("id", activeChatId);
+    } catch (err) {
+      // Fehlertext in Platzhalter schreiben
+      setChats(prev =>
+        prev.map(c => {
+          if (c.id !== activeChatId) return c;
+          const msgs = [...c.messages];
+          msgs[msgs.length - 1] = { sender: "KI", text: "Fehler bei KI" };
+          return { ...c, messages: msgs };
+        })
+      );
     }
 
-    const updatedMessages = [...newMessages, { sender: "KI", text: answer }];
-    const { data: updatedChat, error: errUpdate } = await supabase
-      .from("chats")
-      .update({ messages: updatedMessages })
-      .eq("id", activeChatId)
-      .select()
-      .single();
-
-    if (!errUpdate && updatedChat) {
-      setChats(chs => chs.map(chat => chat.id === activeChatId ? { ...chat, messages: updatedMessages } : chat));
-    }
     setLoading(false);
   };
 
-  // ---------- Stil-Token ----------
-  const C = {
-    bg: "#0e0f13",
-    panel: "#111319",
-    panelHover: "#171a22",
-    border: "#1f2330",
-    text: "#e7e9ee",
-    sub: "#aab1c2",
-    muted: "#8b91a1",
-    accent: "#2f6bff"
-  };
-
-  // ---------- Layout / Styles ----------
+  // ---- Styles (wie zuvor, plus kleine Buttons im Archiv) ----
+  const C = { bg:"#0e0f13", panel:"#111319", panelHover:"#171a22", border:"#1f2330", text:"#e7e9ee", sub:"#aab1c2", muted:"#8b91a1", accent:"#2f6bff" };
   const SIDEBAR_W = 280;
 
-  const sidebarStyle = {
-    width: SIDEBAR_W,
-    background: C.panel,
-    minHeight: "100vh",
-    display: "flex",
-    flexDirection: "column",
-    gap: 12,
-    padding: "20px 14px",
-    borderRight: `1px solid ${C.border}`,
-    position: "fixed",
-    left: 0, top: 0
-  };
-
-  const mainBgStyle = {
-    background: C.bg,
-    minHeight: "100vh",
-    width: "100%",
-    paddingLeft: SIDEBAR_W,   // exakt so breit wie Sidebar
-    boxSizing: "border-box",
-    fontFamily: '"Inter","SF Pro Text","Segoe UI",system-ui,-apple-system,sans-serif',
-    color: C.text,
-    overflowX: "hidden"
-  };
-
-  const brandStyle = {
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    padding: "6px 10px",
-    marginBottom: 4,
-    fontWeight: 700,
-    fontSize: "14px",
-    color: C.text,
-    letterSpacing: ".02em"
-  };
-
-  const primaryBtn = {
-    background: C.panelHover,
-    color: C.text,
-    border: `1px solid ${C.border}`,
-    padding: "10px 12px",
-    borderRadius: 10,
-    fontWeight: 600,
-    fontSize: 14,
-    textAlign: "left",
-    cursor: "pointer"
-  };
-
-  const chatItem = (active) => ({
-    ...primaryBtn,
-    background: active ? "#0f121a" : "transparent",
-    border: `1px solid ${active ? C.accent + "33" : "transparent"}`,
-    color: active ? C.text : C.sub
-  });
-
-  const chatListStyle = {
-    display: "flex",
-    flexDirection: "column",
-    gap: 6,
-    marginTop: 6,
-    overflowY: "auto"
-  };
-
-  const headerStyle = {
-    position: "sticky",
-    top: 0,
-    backdropFilter: "saturate(120%) blur(6px)",
-    background: `${C.bg}cc`,
-    borderBottom: `1px solid ${C.border}`,
-    padding: "14px 0",
-    zIndex: 1
-  };
-
-  const chatWrap = {
-    maxWidth: 860,        // Inhalt etwas breiter als Input
-    width: "92vw",
-    margin: "0 auto",
-    padding: "0 20px 26px"
-  };
-
-  const messageRow = (role) => ({
-    display: "flex",
-    justifyContent: role === "user" ? "flex-end" : "flex-start",
-    margin: "10px 0"
-  });
-
-  const bubble = (role) => ({
-    maxWidth: "88%",
-    padding: "12px 14px",
-    borderRadius: 12,
-    lineHeight: 1.6,
-    fontSize: 16,
-    whiteSpace: "pre-wrap",
-    wordBreak: "break-word",
-    overflowWrap: "anywhere",
-    background: role === "user" ? C.panel : "#0f1218",
-    border: `1px solid ${C.border}`
-  });
-
-  // Input-Leiste (schmal, ChatGPT-Style)
-  const inputBarOuter = {
-    position: "sticky",
-    bottom: 0,
-    background: `${C.bg}cc`,
-    backdropFilter: "saturate(120%) blur(6px)",
-    borderTop: `1px solid ${C.border}`,
-    padding: "16px 0"
-  };
-
-  const inputBarInner = {
-    maxWidth: 740,   // schmale Breite
-    width: "92vw",
-    margin: "0 auto",
-    display: "flex",
-    gap: 8
-  };
-
-  const inputStyle = {
-    flex: 1,
-    padding: "14px 16px",
-    borderRadius: 12,
-    border: `1px solid ${C.border}`,
-    background: C.panel,
-    color: C.text,
-    fontSize: 16,
-    outline: "none"
-  };
-
-  const sendBtn = {
-    background: C.accent,
-    color: "#fff",
-    border: "none",
-    padding: "12px 16px",
-    borderRadius: 12,
-    fontWeight: 700,
-    fontSize: 14,
-    opacity: loading || !input.trim() ? 0.65 : 1,
-    cursor: loading || !input.trim() ? "not-allowed" : "pointer"
-  };
-
-  const currentMessages = chats.find(c => c.id === activeChatId)?.messages || [];
-
-  if (!user) {
-    return (
-      <div style={mainBgStyle}>
-        <div style={{ width: "100vw", height: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <AuthForm />
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ display: "flex", width: "100vw", minHeight: "100vh", background: C.bg }}>
-      {/* Sidebar */}
-      <aside style={sidebarStyle}>
-        <div style={brandStyle}>
-          <span style={{ width: 8, height: 8, borderRadius: 4, background: C.accent, display: "inline-block" }} />
-          <span>Jiperia</span><span style={{ color: C.muted, fontWeight: 600 }}>MVP</span>
-        </div>
-
-        <button style={primaryBtn} onClick={handleNewChat}>+ Neuer Chat</button>
-
-        {/* Archiv ~25% nach unten */}
-        <div style={{ height: "25vh" }} />
-
-        <div style={{ marginTop: 8, color: C.muted, fontWeight: 600, fontSize: 12, letterSpacing: ".06em", textTransform: "uppercase" }}>
-          Archiv
-        </div>
-
-        {isLoadingChats && <div style={{ color: C.muted, fontSize: 13, padding: "8px 2px" }}>Lädt…</div>}
-
-        <div style={chatListStyle}>
-          {chats.map(chat => (
-            <button
-              key={chat.id}
-              title={chat.title}
-              style={chatItem(chat.id === activeChatId)}
-              onClick={() => setActiveChatId(chat.id)}
-            >
-              <span style={{
-                display: "inline-block",
-                maxWidth: "100%",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap"
-              }}>
-                {chat.title || 'Neuer Chat'}
-              </span>
-            </button>
-          ))}
-        </div>
-
-        <div style={{ flex: 1 }} />
-        <div style={{ fontSize: 12, color: C.muted, borderTop: `1px solid ${C.border}`, paddingTop: 10, marginTop: 10 }}>
-          Eingeloggt als<br /><span style={{ fontWeight: 600, color: C.sub }}>{user?.email}</span>
-        </div>
-      </aside>
-
-      {/* Main */}
-      <main style={mainBgStyle}>
-        <div style={headerStyle}>
-          <div style={{ ...chatWrap, paddingTop: 0, paddingBottom: 0 }}>
-            <h1 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: C.text }}>KI-Chat</h1>
-            <div style={{ marginTop: 4, fontSize: 13, color: C.muted }}>Frag mich irgendwas.</div>
-          </div>
-        </div>
-
-        <div style={{ ...chatWrap, paddingTop: 18 }}>
-          <div style={{ minHeight: "56vh" }}>
-            {currentMessages.length === 0 && !loading && (
-              <div style={{ color: C.muted, textAlign: "center", marginTop: "18vh", fontSize: 15 }}>
-                Starte mit einer Frage – z. B. <em>„Erklär mir JSON in 2 Sätzen“</em>
-              </div>
-            )}
-
-            {currentMessages.map((msg, i) => {
-              const role = msg.sender === "Du" ? "user" : "assistant";
-              return (
-                <div key={i} style={messageRow(role === "user" ? "user" : "assistant")}>
-                  <div style={bubble(role === "user" ? "user" : "assistant")}>
-                    {msg.text}
-                  </div>
-                </div>
-              );
-            })}
-
-            {loading && (
-              <div style={messageRow("assistant")}>
-                <div style={bubble("assistant")}><i>Antwort kommt …</i></div>
-              </div>
-            )}
-            <div ref={chatEndRef} />
-          </div>
-        </div>
-
-        {/* Schmale Input-Leiste */}
-        <div style={inputBarOuter}>
-          <form onSubmit={handleSend} style={inputBarInner}>
-            <input
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              placeholder="Schreibe eine Nachricht…"
-              style={inputStyle}
-              disabled={loading}
-            />
-            <button type="submit" disabled={loading || !input.trim()} style={sendBtn}>
-              Senden
-            </button>
-          </form>
-        </div>
-      </main>
-
-      {/* Global: kein horizontales Scrollen */}
-      <style jsx global>{`
-        * { box-sizing: border-box; }
-        html, body { background: ${C.bg}; overflow-x: hidden; }
-        ::-webkit-scrollbar { width: 10px; height: 10px; }
-        ::-webkit-scrollbar-thumb { background: ${C.border}; border-radius: 10px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-      `}</style>
-    </div>
-  );
-}
+  const sidebarStyle = { width:SIDEBAR_W, background:C.panel, minHeight:"100vh", display:"flex", flexDirection:"column", gap:12, padding:"20px 14px", borderRight:`1px solid ${C.border}`, position:"fixed", left:0, top:0 };
+  const mainBgStyle = { background:C.bg, minHeight:"100vh", width:"100%", paddingLeft:SIDEBAR_W, boxSizing:"border-box", fontFamily:'"Inter","SF Pro Text","Segoe UI",system-ui,-apple-system,sans-serif', color:C.text, overflowX:"hidden" };
+  const brandStyle = { display:"flex", alignItems:"center", gap:10, padding:"6px 10px", marginBottom:4, fontWeight:700, fontSize:14, color:C.text, letterSpacing:".02em" };
+  const primaryBtn = { background:C.panelHover, color:C.text, border:`1px solid ${C.border}`, padding:"10px 12px", borderRadius:10, fontWeight:600, fontSize:14, textAlign:"left", cursor:"pointer" };
+  const chatItem = (active)=>({ ...primaryBtn, position:'relative', paddingRight:86, background:active?"#0f121a":"transparent", border:`1px solid ${active ? C.accent+"33":"transparent"}`, color:active?C.text:C.sub });
+  const chatListStyle = { display:"flex", flexDirection:"column", gap:6, marginTop:6, overflowY:"auto" };
+  const headerStyle = { position:"sticky", top:0, backdropFilter:"saturate(120%) blur(6px)", background:`${C.bg}cc`, borderBottom:`1
