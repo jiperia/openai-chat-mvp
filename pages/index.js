@@ -287,3 +287,17 @@ export default function Home() {
     </div>
   );
 }
+
+import AuthForm from './AuthForm';
+
+function App() {
+  return (
+    <div>
+      <AuthForm />
+      {/* Hier später dein Chat-Archiv etc. */}
+    </div>
+  );
+}
+
+export default App;
+
