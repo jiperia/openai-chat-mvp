@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import AuthForm from '../AuthForm'; // Import wie in deinem Setup!
+import AuthForm from '../AuthForm';
 
 export default function Home() {
   const [user, setUser] = useState(null);
@@ -141,8 +141,8 @@ export default function Home() {
     border: "none",
     padding: "14px 18px",
     borderRadius: "8px",
-    fontWeight: 600,
-    fontSize: "1em",
+    fontWeight: 700,
+    fontSize: "1.1em",
     textAlign: "left",
     marginBottom: 8,
     cursor: "pointer",
@@ -183,18 +183,18 @@ export default function Home() {
   }
 
   return (
-    <div style={{ display: "flex", width: "100vw", minHeight: "100vh", fontFamily: '"Inter","Segoe UI","Arial",sans-serif' }}>
+    <div style={{ display: "flex", width: "100vw", minHeight: "100vh", background: "#22242b", fontFamily: '"Inter","Segoe UI","Arial",sans-serif' }}>
       {/* Sidebar */}
       <aside style={sidebarStyle}>
         <div style={{
-          fontWeight: 800, fontSize: "1.1em", color: "#fff", marginBottom: 8, letterSpacing: ".02em"
+          fontWeight: 800, fontSize: "1.18em", color: "#fff", marginBottom: 10, letterSpacing: ".025em"
         }}>
-          Langdock Kopie
+          Jiperia MVP
         </div>
         <button style={navBtn(false)} onClick={handleNewChat}>
           + Neuer Chat
         </button>
-        <div style={{ fontWeight: 700, color: "#99abc7", fontSize: "0.97em", margin: "10px 0 2px 0" }}>
+        <div style={{ fontWeight: 700, color: "#99abc7", fontSize: "1.02em", margin: "10px 0 2px 0" }}>
           Archiv
         </div>
         {isLoadingChats && <div style={{ color: "#bbb", marginBottom: 9 }}>Lädt…</div>}
@@ -208,7 +208,7 @@ export default function Home() {
           </button>
         ))}
         <div style={{ flex: 1 }} />
-        <div style={{ fontSize: "0.90em", color: "#7d8798", marginTop: 20 }}>
+        <div style={{ fontSize: "0.93em", color: "#7d8798", marginTop: 20 }}>
           Eingeloggt als<br /><span style={{ fontWeight: 700 }}>{user?.email}</span>
         </div>
       </aside>
@@ -224,7 +224,6 @@ export default function Home() {
           }}>
             KI-Chat MVP
           </h1>
-          {/* Nachrichtenliste wie Langdock – nur Text */}
           <div style={{ flex: 1, display: "flex", flexDirection: "column", marginTop: 12 }}>
             {currentMessages.length === 0 && !loading &&
               <div style={{
@@ -238,17 +237,17 @@ export default function Home() {
               <div key={i} style={{
                 margin: "15px 0",
                 padding: 0,
-                fontSize: "1.12em",
+                fontSize: "1.15em",
                 color: "#e1e4eb",
                 lineHeight: 1.68,
                 display: "flex",
                 flexDirection: "row"
               }}>
                 <span style={{
-                  fontSize: ".94em",
+                  fontSize: ".97em",
                   color: "#b7bbcb",
                   marginRight: 10,
-                  fontWeight: 600,
+                  fontWeight: 700,
                   letterSpacing: ".01em"
                 }}>{msg.sender === "Du" ? "Ich" : "KI"}:</span>
                 <span style={{
@@ -261,7 +260,7 @@ export default function Home() {
                 margin: "15px 0",
                 fontStyle: "italic",
                 color: "#878a92",
-                fontSize: "1.08em"
+                fontSize: "1.09em"
               }}>Antwort kommt …</div>
             }
             <div ref={chatEndRef}></div>
