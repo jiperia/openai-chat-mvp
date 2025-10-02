@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { supabase } from "../supabaseClient";
-import AuthForm from './AuthForm'; // Stelle sicher, dass sie im gleichen Ordner liegt!
+import AuthForm from '../AuthForm'; // Stelle sicher, dass sie im gleichen Ordner liegt!
 
 export default function Home() {
   const [user, setUser] = useState(null);
