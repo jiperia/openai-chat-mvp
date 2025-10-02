@@ -11,7 +11,7 @@ export default function Home() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [isLoadingChats, setIsLoadingChats] = useState(true);
-  const [menuOpenFor, setMenuOpenFor] = useState(null); // 3-Punkte-Menü
+  const [menuOpenFor, setMenuOpenFor] = useState(null); // chatId oder null
   const chatEndRef = useRef(null);
   const menuRef = useRef(null);
 
@@ -50,15 +50,13 @@ export default function Home() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeChatId, chats, loading]);
 
-  // Close menu on outside click / ESC
+  // ---------------- Close menu on outside / ESC ----------------
   useEffect(() => {
     function onDocClick(e) {
       if (!menuRef.current) return;
       if (!menuRef.current.contains(e.target)) setMenuOpenFor(null);
     }
-    function onKey(e) {
-      if (e.key === 'Escape') setMenuOpenFor(null);
-    }
+    function onKey(e) { if (e.key === 'Escape') setMenuOpenFor(null); }
     if (menuOpenFor) document.addEventListener('mousedown', onDocClick);
     window.addEventListener('keydown', onKey);
     return () => {
@@ -85,8 +83,7 @@ export default function Home() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          prompt:
-            `Erzeuge einen extrem kurzen, prägnanten deutschen Chat-Titel (max. 6 Wörter, keine Anführungszeichen, kein Punkt) aus dieser ersten Nachricht:\n\n"${firstMessage}"`
+          prompt: `Erzeuge einen extrem kurzen, prägnanten deutschen Chat-Titel (max. 6 Wörter, keine Anführungszeichen, kein Punkt) aus dieser ersten Nachricht:\n\n"${firstMessage}"`
         })
       });
       if (!res.ok) throw new Error('no 200');
@@ -117,7 +114,7 @@ export default function Home() {
     }
   }
 
-  // ---------------- Aktionen: Umbenennen / Löschen / Teilen ----------------
+  // ---------------- Aktionen ----------------
   async function handleRenameChat(chatId) {
     const current = chats.find(c => c.id === chatId);
     const name = window.prompt('Neuer Titel:', current?.title || '');
@@ -197,7 +194,7 @@ export default function Home() {
     const isFirstMessage = (currentChat?.messages?.length ?? 0) === 0;
 
     const userMsg = { sender: 'Du', text: input };
-    const assistantMsg = { sender: 'KI', text: '' }; // Platzhalter, füllt sich durch Stream
+    const assistantMsg = { sender: 'KI', text: '' };
     const newMessagesLocal = [...(currentChat?.messages || []), userMsg, assistantMsg];
 
     const openaiHistory = [
@@ -239,7 +236,6 @@ export default function Home() {
             const delta = json?.choices?.[0]?.delta?.content || '';
             if (delta) {
               fullText += delta;
-              // letzte Nachricht (KI) live updaten
               setChats(prev =>
                 prev.map(c => {
                   if (c.id !== activeChatId) return c;
@@ -287,7 +283,7 @@ export default function Home() {
     accent: '#2f6bff'
   };
 
-  const SIDEBAR_W = 280;
+  const SIDEBAR_W = 300;
 
   const sidebarStyle = {
     width: SIDEBAR_W,
@@ -295,8 +291,8 @@ export default function Home() {
     minHeight: '100vh',
     display: 'flex',
     flexDirection: 'column',
-    gap: 12,
-    padding: '20px 14px',
+    gap: 14,
+    padding: '22px 16px',
     borderRight: `1px solid ${C.border}`,
     position: 'fixed',
     left: 0, top: 0
@@ -318,7 +314,7 @@ export default function Home() {
     alignItems: 'center',
     gap: 10,
     padding: '6px 10px',
-    marginBottom: 4,
+    marginBottom: 6,
     fontWeight: 700,
     fontSize: 14,
     color: C.text,
@@ -329,8 +325,8 @@ export default function Home() {
     background: C.panelHover,
     color: C.text,
     border: `1px solid ${C.border}`,
-    padding: '10px 12px',
-    borderRadius: 10,
+    padding: '11px 12px',
+    borderRadius: 12,
     fontWeight: 600,
     fontSize: 14,
     textAlign: 'left',
@@ -351,8 +347,9 @@ export default function Home() {
   const chatListStyle = {
     display: 'flex',
     flexDirection: 'column',
-    gap: 6,
-    marginTop: 6,
+    gap: 8,
+    marginTop: 8,
+    paddingRight: 4,
     overflowY: 'auto'
   };
 
@@ -362,7 +359,7 @@ export default function Home() {
     backdropFilter: 'saturate(120%) blur(6px)',
     background: `${C.bg}cc`,
     borderBottom: `1px solid ${C.border}`,
-    padding: '14px 0',
+    padding: '16px 0',
     zIndex: 1
   };
 
@@ -389,8 +386,7 @@ export default function Home() {
     wordBreak: 'break-word',
     overflowWrap: 'anywhere',
     background: role === 'user' ? C.panel : '#0f1218',
-    border: `1px solid ${C.border}`,
-    transition: 'transform .08s ease'
+    border: `1px solid ${C.border}`
   });
 
   const inputBarOuter = {
@@ -438,34 +434,42 @@ export default function Home() {
     background: 'transparent',
     border: `1px solid ${C.border}`,
     color: C.sub,
-    padding: '6px 8px',
+    width: 28,
+    height: 28,
+    lineHeight: '26px',
+    textAlign: 'center',
     borderRadius: 8,
     cursor: 'pointer',
-    display: 'none' // wird über globales :hover sichtbar
+    display: 'none' // nur bei Hover sichtbar (siehe globales CSS)
   };
 
   const menuPopover = {
     position: 'absolute',
-    right: 8,
-    top: 40,
+    right: 6,
+    top: 44,
     background: C.panel,
     border: `1px solid ${C.border}`,
-    borderRadius: 10,
-    boxShadow: '0 10px 30px rgba(0,0,0,.35)',
+    borderRadius: 12,
+    boxShadow: '0 12px 30px rgba(0,0,0,.42)',
     overflow: 'hidden',
     zIndex: 10,
-    minWidth: 190
+    minWidth: 220
   };
 
   const menuItem = {
     width: '100%',
     textAlign: 'left',
-    padding: '10px 12px',
+    padding: '12px 14px',
     background: 'transparent',
     border: 'none',
     color: C.text,
-    cursor: 'pointer'
+    cursor: 'pointer',
+    fontSize: 14
   };
+
+  const Divider = () => (
+    <div style={{ height: 1, background: C.border, opacity: .7 }} />
+  );
 
   // ---------------- Rendering ----------------
   const currentMessages = chats.find(c => c.id === activeChatId)?.messages || [];
@@ -493,7 +497,10 @@ export default function Home() {
 
         <div style={{ height: '25vh' }} />
 
-        <div style={{ marginTop: 8, color: C.muted, fontWeight: 600, fontSize: 12, letterSpacing: '.06em', textTransform: 'uppercase' }}>Archiv</div>
+        <div style={{ marginTop: 4, color: C.muted, fontWeight: 600, fontSize: 12, letterSpacing: '.06em', textTransform: 'uppercase' }}>
+          Archiv
+        </div>
+
         {isLoadingChats && <div style={{ color: C.muted, fontSize: 13, padding: '8px 2px' }}>Lädt…</div>}
 
         <div style={chatListStyle}>
@@ -514,13 +521,14 @@ export default function Home() {
                     maxWidth: 'calc(100% - 44px)',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap'
+                    whiteSpace: 'nowrap',
+                    fontWeight: 640
                   }}>
                     {chat.title || 'Neuer Chat'}
                   </span>
 
                   {/* Dots rechts (nur bei Hover sichtbar) */}
-                  <span style={{ position: 'absolute', right: 8, top: 6 }}>
+                  <span style={{ position: 'absolute', right: 8, top: 7 }}>
                     <button
                       className="dots"
                       aria-label="Menü"
@@ -528,7 +536,8 @@ export default function Home() {
                       style={dotsBtn}
                       onClick={(e) => { e.stopPropagation(); setMenuOpenFor(p => p === chat.id ? null : chat.id); }}
                     >
-                      ⋯
+                      {/* vertikale Punkte: */}
+                      <span style={{ fontSize: 18, position: 'relative', top: -1 }}>⋮</span>
                     </button>
                   </span>
                 </button>
@@ -541,21 +550,31 @@ export default function Home() {
                       onMouseEnter={(e)=> e.currentTarget.style.background = C.panelHover}
                       onMouseLeave={(e)=> e.currentTarget.style.background = 'transparent'}
                       onClick={() => { setMenuOpenFor(null); handleRenameChat(chat.id); }}
-                    >Umbenennen</button>
+                    >
+                      Umbenennen
+                    </button>
+
+                    <Divider />
 
                     <button
                       style={{ ...menuItem, color: chat.is_public ? '#6ee7b7' : C.text }}
                       onMouseEnter={(e)=> e.currentTarget.style.background = C.panelHover}
                       onMouseLeave={(e)=> e.currentTarget.style.background = 'transparent'}
                       onClick={() => { setMenuOpenFor(null); handleToggleShare(chat.id); }}
-                    >{chat.is_public ? 'Teilen deaktivieren' : 'Teilen aktivieren'}</button>
+                    >
+                      {chat.is_public ? 'Teilen deaktivieren' : 'Teilen aktivieren'}
+                    </button>
+
+                    <Divider />
 
                     <button
                       style={{ ...menuItem, color: '#f87171' }}
                       onMouseEnter={(e)=> e.currentTarget.style.background = C.panelHover}
                       onMouseLeave={(e)=> e.currentTarget.style.background = 'transparent'}
                       onClick={() => { setMenuOpenFor(null); handleDeleteChat(chat.id); }}
-                    >Löschen</button>
+                    >
+                      Löschen
+                    </button>
                   </div>
                 )}
               </div>
