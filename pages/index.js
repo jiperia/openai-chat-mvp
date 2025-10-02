@@ -103,11 +103,39 @@ export default function Home() {
   }
 
   // ---- New Chat ----
-  const handleNewChat = async () => {
-    if (!user) return;
-    const { data } = await supabase.from('chats').insert([{ title: 'Neuer Chat', messages: [], user_id: user.id }]).select().single();
-    if (data) { setChats(chs => [data, ...chs]); setActiveChatId(data.id); setInput(''); }
-  };
+const handleNewChat = async () => {
+  try {
+    // Safety: sicherstellen, dass noch ein User da ist
+    const { data: authData } = await supabase.auth.getUser();
+    const me = authData?.user || user;
+    if (!me?.id) {
+      alert('Nicht eingeloggt – bitte neu anmelden.');
+      return;
+    }
+
+    const payload = { title: 'Neuer Chat', messages: [], user_id: me.id };
+
+    const { data, error } = await supabase
+      .from('chats')
+      .insert([payload])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('INSERT chats error:', error, { payload });
+      alert('Konnte Chat nicht anlegen:\n' + (error.message || JSON.stringify(error)));
+      return;
+    }
+
+    setChats(chs => [data, ...chs]); // oben einfügen
+    setActiveChatId(data.id);
+    setInput('');
+  } catch (e) {
+    console.error('handleNewChat fatal:', e);
+    alert('Unerwarteter Fehler beim Anlegen des Chats: ' + (e.message || e));
+  }
+};
+
 
   // ---- STREAMING Send ----
   const handleSend = async (e) => {
