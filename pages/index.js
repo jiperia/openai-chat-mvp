@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import AuthForm from '../AuthForm'; // Korrektes Importverzeichnis!
+import AuthForm from '../AuthForm'; // Import wie in deinem Setup!
 
 export default function Home() {
   const [user, setUser] = useState(null);
@@ -38,7 +38,7 @@ export default function Home() {
         .order('created_at', { ascending: true });
       if (!error && data) {
         setChats(data);
-        if (data.length > 0) setActiveChatId(data[data.length-1].id); // Zeige neuesten Chat zuerst!
+        if (data.length > 0) setActiveChatId(data[data.length-1].id);
       }
       setIsLoadingChats(false);
     }
@@ -89,13 +89,11 @@ export default function Home() {
       )
     );
     setInput('');
-    // KI-Request wie gehabt
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ history: openaiHistory })
     });
-
     let answer = "Fehler bei KI";
     if (res.ok) {
       const data = await res.json();
@@ -106,7 +104,6 @@ export default function Home() {
     } else {
       answer = await res.text();
     }
-
     const updatedMessages = [...newMessages, { sender: "KI", text: answer }];
     const { data: updatedChat, error: errUpdate } = await supabase
       .from("chats")
@@ -129,67 +126,50 @@ export default function Home() {
   // Styling
   const sidebarStyle = {
     width: 240,
-    background: "#f9fafc",
-    borderRight: "1.5px solid #e5e7eb",
+    background: "#22242b",
     minHeight: "100vh",
     display: "flex",
     flexDirection: "column",
     alignItems: "flex-start",
     gap: 18,
-    padding: "36px 18px 24px 22px",
+    padding: "32px 18px 22px 22px",
+    borderRight: "1.5px solid #2c2f3a"
   };
-
   const navBtn = isActive => ({
-    background: isActive ? "#2563eb" : "#fff",
-    color: isActive ? "#fff" : "#222",
+    background: isActive ? "#2c2f3a" : "none",
+    color: isActive ? "#fff" : "#c1c5d0",
     border: "none",
-    padding: "14px 28px",
-    borderRadius: "14px",
-    boxShadow: isActive ? "0 2px 12px #2563eb15" : "none",
+    padding: "14px 18px",
+    borderRadius: "8px",
     fontWeight: 600,
     fontSize: "1em",
     textAlign: "left",
-    marginBottom: 10,
+    marginBottom: 8,
     cursor: "pointer",
-    opacity: isActive ? 1 : 0.87,
-    transition: "all 0.17s"
+    opacity: isActive ? 1 : 0.88
   });
-
   const mainBgStyle = {
-    background: "linear-gradient(120deg,#f6fafd 40%,#e8eef3 100%)",
+    background: "#22242b",
     minHeight: "100vh",
     width: "100%",
     paddingLeft: 240,
-    boxSizing: "border-box"
+    boxSizing: "border-box",
+    fontFamily: '"Inter","Segoe UI","Arial",sans-serif',
+    color: "#e1e3e8"
   };
-
   const chatCardStyle = {
-    background: "#fff",
-    borderRadius: "22px",
-    boxShadow: "0 8px 40px rgba(40,60,100,0.10)",
-    maxWidth: 520,
-    margin: "64px auto 0",
-    padding: "32px 24px",
-    minHeight: 440,
+    background: "none",
+    borderRadius: "0",
+    boxShadow: "none",
+    maxWidth: 800,
+    margin: "50px auto 0",
+    padding: "16px 0 18px 0",
+    minHeight: 540,
     display: "flex",
     flexDirection: "column"
   };
-
-  const bubbleStyle = sender => ({
-    maxWidth: "70%",
-    padding: "14px 18px",
-    borderRadius: 18,
-    margin: "4px 0",
-    background: sender === "Du" ? "#2563eb" : "#f5f7fa",
-    color: sender === "Du" ? "#fff" : "#222",
-    alignSelf: sender === "Du" ? "flex-end" : "flex-start",
-    boxShadow: "0 2px 12px rgba(40,60,100,0.06)",
-    fontWeight: sender === "Du" ? 500 : 400
-  });
-
   const currentMessages = chats.find(c => c.id === activeChatId)?.messages || [];
 
-  // Falls kein User: Login-Form anzeigen!
   if (!user) {
     return (
       <div style={mainBgStyle}>
@@ -203,18 +183,18 @@ export default function Home() {
   }
 
   return (
-    <div style={{ display: "flex", width: "100vw", minHeight: "100vh", fontFamily: 'Inter, Arial, sans-serif' }}>
+    <div style={{ display: "flex", width: "100vw", minHeight: "100vh", fontFamily: '"Inter","Segoe UI","Arial",sans-serif' }}>
       {/* Sidebar */}
       <aside style={sidebarStyle}>
         <div style={{
-          fontWeight: 800, fontSize: "1.1em", color: "#2563eb", marginBottom: 9, letterSpacing: ".04em"
+          fontWeight: 800, fontSize: "1.1em", color: "#fff", marginBottom: 8, letterSpacing: ".02em"
         }}>
-          🦾 KI-Chat
+          Langdock Kopie
         </div>
         <button style={navBtn(false)} onClick={handleNewChat}>
           + Neuer Chat
         </button>
-        <div style={{ fontWeight: 700, color: "#99abc7", fontSize: "1em", margin: "12px 0 2px 0" }}>
+        <div style={{ fontWeight: 700, color: "#99abc7", fontSize: "0.97em", margin: "10px 0 2px 0" }}>
           Archiv
         </div>
         {isLoadingChats && <div style={{ color: "#bbb", marginBottom: 9 }}>Lädt…</div>}
@@ -227,58 +207,67 @@ export default function Home() {
             {chat.title}
           </button>
         ))}
-        {/* Platz (z. B. für Rollen, Settings usw.) */}
         <div style={{ flex: 1 }} />
-        <div style={{ fontSize: "0.92em", color: "#b3b8be", marginTop: 24 }}>
+        <div style={{ fontSize: "0.90em", color: "#7d8798", marginTop: 20 }}>
           Eingeloggt als<br /><span style={{ fontWeight: 700 }}>{user?.email}</span>
         </div>
       </aside>
-
-      {/* Main Chat */}
       <main style={mainBgStyle}>
         <div style={chatCardStyle}>
           <h1 style={{
-            textAlign: "center",
-            color: "#2563eb",
+            textAlign: "left",
+            color: "#fff",
             fontWeight: 900,
-            letterSpacing: "0.06em",
-            marginBottom: 8,
-            fontSize: "1.38em"
+            marginBottom: 18,
+            fontSize: "1.32em",
+            letterSpacing: "0.04em"
           }}>
-            💬 KI-Chat MVP
+            KI-Chat MVP
           </h1>
-          <div style={{ marginBottom: 18, textAlign: "center", color: "#adcbe6", fontWeight: 500, fontSize: "1.02em" }}>
-            {chats.length === 0 ? "Starte einen neuen Chat!" : "Verlauf & Antworten"}
-          </div>
-          <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-            {(currentMessages.length === 0 && !loading) &&
+          {/* Nachrichtenliste wie Langdock – nur Text */}
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", marginTop: 12 }}>
+            {currentMessages.length === 0 && !loading &&
               <div style={{
-                color: "#adcbe6",
+                color: "#a3a8ab",
                 textAlign: "center",
-                marginTop: "35%"
+                marginTop: "35%",
+                fontSize: "1.05em"
               }}>Frag mich irgendwas …</div>
             }
             {currentMessages.map((msg, i) => (
-              <div key={i} style={bubbleStyle(msg.sender)}>
+              <div key={i} style={{
+                margin: "15px 0",
+                padding: 0,
+                fontSize: "1.12em",
+                color: "#e1e4eb",
+                lineHeight: 1.68,
+                display: "flex",
+                flexDirection: "row"
+              }}>
                 <span style={{
-                  fontWeight: 700,
-                  fontSize: "0.92em",
-                  color: msg.sender === "Du" ? "#e7f0fd" : "#88a",
+                  fontSize: ".94em",
+                  color: "#b7bbcb",
+                  marginRight: 10,
+                  fontWeight: 600,
                   letterSpacing: ".01em"
-                }}>{msg.sender}:</span>
-                <span style={{ marginLeft: 8 }}>{msg.text}</span>
+                }}>{msg.sender === "Du" ? "Ich" : "KI"}:</span>
+                <span style={{
+                  fontWeight: 440
+                }}>{msg.text}</span>
               </div>
             ))}
             {loading &&
               <div style={{
-                ...bubbleStyle("KI"), fontStyle: "italic",
-                color: "#999"
+                margin: "15px 0",
+                fontStyle: "italic",
+                color: "#878a92",
+                fontSize: "1.08em"
               }}>Antwort kommt …</div>
             }
             <div ref={chatEndRef}></div>
           </div>
           <form onSubmit={handleSend} style={{
-            display: "flex", gap: 10, marginTop: 22
+            display: "flex", gap: 10, marginTop: 24, borderTop: "1px solid #353842", paddingTop: 16
           }}>
             <input
               value={input}
@@ -286,29 +275,29 @@ export default function Home() {
               placeholder="Deine Nachricht …"
               style={{
                 flex: 1,
-                padding: "15px 18px",
-                borderRadius: 14,
-                border: "1.5px solid #adcbe6",
-                background: "#f9fafc",
-                fontSize: "1em",
+                padding: "14px 16px",
+                borderRadius: 8,
+                border: "1px solid #353842",
+                background: "#232531",
+                color: "#eee",
+                fontSize: "1.08em",
                 outline: "none"
               }}
               disabled={loading}
             />
             <button type="submit" disabled={loading || !input.trim()} style={{
-              background: "#2563eb",
+              background: "#232531",
               color: "#fff",
               border: "none",
-              padding: "15px 26px",
-              borderRadius: 14,
+              padding: "14px 23px",
+              borderRadius: 8,
               fontWeight: 700,
-              fontSize: "1em",
+              fontSize: "1.00em",
               letterSpacing: ".015em",
-              boxShadow: loading ? "none" : "0 2px 8px #2563eb19",
               opacity: loading || !input.trim() ? 0.65 : 1,
               cursor: loading || !input.trim() ? "not-allowed" : "pointer",
               transition: "all 0.16s"
-            }}>Senden</button>
+            }}>⤴</button>
           </form>
         </div>
       </main>
