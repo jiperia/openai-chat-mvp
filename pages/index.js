@@ -9,13 +9,11 @@ export default function Home() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [isLoadingChats, setIsLoadingChats] = useState(true);
-  const [editChatId, setEditChatId] = useState(null);
-  const [editTitle, setEditTitle] = useState("");
   const chatEndRef = useRef(null);
 
   const SYSTEM_PROMPT = 'Du bist ein freundlicher, deutschsprachiger KI-Chatassistent.';
 
-  // ---- Auth ----
+  // ---------- Auth ----------
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUser(data?.user ?? null));
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -24,7 +22,7 @@ export default function Home() {
     return () => listener?.subscription?.unsubscribe?.();
   }, []);
 
-  // ---- Chats laden (absteigend, neueste oben) ----
+  // ---------- Chats laden (NEU: absteigend, neueste oben) ----------
   useEffect(() => {
     async function fetchChats() {
       setIsLoadingChats(true);
@@ -37,7 +35,7 @@ export default function Home() {
         .from('chats')
         .select('*')
         .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false }); // neueste zuerst
 
       if (!error && data) {
         setChats(data);
@@ -48,35 +46,97 @@ export default function Home() {
     fetchChats();
   }, [user]);
 
-  // ---- Scroll an das Ende des aktiven Chats ----
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeChatId, chats, loading]);
 
-  // ---- Neuer Chat (oben einfügen) ----
+  // ---------- Titel-Helfer ----------
+  function simpleTitleFromText(text, maxWords = 7) {
+    if (!text) return 'Neuer Chat';
+    // Klammern/URLs/überflüssiges weg
+    let s = text
+      .replace(/\s+/g, ' ')
+      .replace(/\[[^\]]*\]|\([^\)]*\)/g, '')
+      .replace(/https?:\/\/\S+/g, '')
+      .trim();
+    const words = s.split(' ').slice(0, maxWords).join(' ');
+    // Satzzeichen am Ende weg, ersten Buchstaben groß
+    s = words.replace(/[.,;:!?-]+$/g, '');
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+
+  async function generateTitleSmart(firstMessage) {
+    // Optionaler smarter Endpoint. Fällt zurück auf simpleTitleFromText.
+    try {
+      const res = await fetch('/api/generateTitle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt:
+            `Erzeuge einen extrem kurzen, beschreibenden deutschen Chat-Titel (max. 6 Wörter, keine Anführungszeichen, kein Punkt) aus dieser ersten Nachricht:\n\n"${firstMessage}"`
+        })
+      });
+      if (!res.ok) throw new Error('no 200');
+      const { title } = await res.json();
+      const cleaned = (title || '').toString().trim();
+      return cleaned || simpleTitleFromText(firstMessage);
+    } catch {
+      return simpleTitleFromText(firstMessage);
+    }
+  }
+
+  async function ensureTitleForChat(chatId, firstUserMessageText) {
+    // Holt Chat, prüft, ob noch Platzhalter/nummeriert, setzt dann Titel.
+    const chat = chats.find(c => c.id === chatId);
+    if (!chat) return;
+
+    const isPlaceholder =
+      !chat.title ||
+      chat.title === 'Neuer Chat' ||
+      /^Chat\s*#\d+$/i.test(chat.title);
+
+    const hadNoMessages = (chat.messages?.length ?? 0) === 0;
+
+    if (hadNoMessages && isPlaceholder && firstUserMessageText?.trim()) {
+      const newTitle = await generateTitleSmart(firstUserMessageText);
+      const { data: updated, error } = await supabase
+        .from('chats')
+        .update({ title: newTitle })
+        .eq('id', chatId)
+        .select()
+        .single();
+
+      if (!error && updated) {
+        setChats(prev => prev.map(c => (c.id === chatId ? { ...c, title: newTitle } : c)));
+      }
+    }
+  }
+
+  // ---------- Neuer Chat ----------
   const handleNewChat = async () => {
     if (!user) return;
-    const chatTitle = `Chat #${chats.length + 1}`;
+    const chatTitle = 'Neuer Chat'; // Platzhalter
     const { data, error } = await supabase
       .from('chats')
       .insert([{ title: chatTitle, messages: [], user_id: user.id }])
       .select()
       .single();
-
     if (!error && data) {
-      setChats(chs => [data, ...chs]);
+      setChats(chs => [data, ...chs]); // oben einfügen
       setActiveChatId(data.id);
       setInput('');
     }
   };
 
-  // ---- Nachricht senden ----
+  // ---------- Nachricht senden ----------
   const handleSend = async (e) => {
     e.preventDefault();
     if (!input.trim() || loading || !activeChatId) return;
 
-    const userMsg = { sender: "Du", text: input };
     const currentChat = chats.find(c => c.id === activeChatId);
+    const isFirstMessage = (currentChat?.messages?.length ?? 0) === 0;
+
+    const userMsg = { sender: "Du", text: input };
     const newMessages = [...(currentChat?.messages || []), userMsg];
 
     const openaiHistory = [
@@ -91,9 +151,16 @@ export default function Home() {
     ];
 
     setLoading(true);
+    // sofort im UI anzeigen
     setChats(chs => chs.map(chat => chat.id === activeChatId ? { ...chat, messages: newMessages } : chat));
     setInput('');
 
+    // ---- Titel nach erster Nachricht setzen (nicht blockierend) ----
+    if (isFirstMessage) {
+      ensureTitleForChat(activeChatId, userMsg.text);
+    }
+
+    // ---- KI-Antwort holen ----
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -125,7 +192,7 @@ export default function Home() {
     setLoading(false);
   };
 
-  // ---- Stil-Token (ruhiges, reduziertes Dark Theme) ----
+  // ---------- Stil-Token ----------
   const C = {
     bg: "#0e0f13",
     panel: "#111319",
@@ -137,7 +204,7 @@ export default function Home() {
     accent: "#2f6bff"
   };
 
-  // ---- Styles (inline, minimal) ----
+  // ---------- Styles ----------
   const sidebarStyle = {
     width: 280,
     background: C.panel,
@@ -182,17 +249,14 @@ export default function Home() {
     fontWeight: 600,
     fontSize: 14,
     textAlign: "left",
-    cursor: "pointer",
-    transition: "background .15s, border-color .15s"
+    cursor: "pointer"
   };
 
   const chatItem = (active) => ({
     ...primaryBtn,
-    padding: "10px 12px",
     background: active ? "#0f121a" : "transparent",
     border: `1px solid ${active ? C.accent + "33" : "transparent"}`,
-    color: active ? C.text : C.sub,
-    opacity: active ? 1 : .95
+    color: active ? C.text : C.sub
   });
 
   const chatListStyle = {
@@ -267,8 +331,7 @@ export default function Home() {
     fontWeight: 700,
     fontSize: 14,
     opacity: loading || !input.trim() ? 0.65 : 1,
-    cursor: loading || !input.trim() ? "not-allowed" : "pointer",
-    transition: "transform .08s ease",
+    cursor: loading || !input.trim() ? "not-allowed" : "pointer"
   };
 
   const currentMessages = chats.find(c => c.id === activeChatId)?.messages || [];
@@ -302,84 +365,22 @@ export default function Home() {
 
         <div style={chatListStyle}>
           {chats.map(chat => (
-            <div key={chat.id} style={{ position: "relative" }}>
-              {editChatId === chat.id ? (
-                <form
-                  onSubmit={async (e) => {
-                    e.preventDefault();
-                    if (!editTitle.trim()) return;
-                    const { data: updated, error } = await supabase
-                      .from("chats")
-                      .update({ title: editTitle })
-                      .eq("id", chat.id)
-                      .select()
-                      .single();
-                    if (!error && updated) {
-                      setChats(chs => chs.map(c => c.id === chat.id ? { ...c, title: editTitle } : c));
-                      setEditChatId(null);
-                      setEditTitle("");
-                    }
-                  }}
-                  style={{ display: "flex", gap: 4, alignItems: "center" }}
-                >
-                  <input
-                    value={editTitle}
-                    onChange={e => setEditTitle(e.target.value)}
-                    autoFocus
-                    style={{
-                      padding: "7px 8px",
-                      borderRadius: 7,
-                      border: "1px solid #444",
-                      fontSize: 14,
-                      background: "#181924",
-                      color: "#fff",
-                      width: 90,
-                      marginRight: 4
-                    }}
-                    onBlur={() => setEditChatId(null)}
-                  />
-                  <button type="submit" style={{
-                    border: "none", background: "#2f6bff", color: "#fff",
-                    borderRadius: 5, padding: "7px 9px", fontWeight: 700, fontSize: 12, cursor: "pointer"
-                  }}>OK</button>
-                </form>
-              ) : (
-                <button
-                  title={chat.title}
-                  style={chatItem(chat.id === activeChatId)}
-                  onClick={() => setActiveChatId(chat.id)}
-                  onDoubleClick={() => { setEditChatId(chat.id); setEditTitle(chat.title); }}
-                >
-                  <span style={{
-                    display: "inline-block",
-                    maxWidth: "80%",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap"
-                  }}>
-                    {chat.title}
-                  </span>
-                  <span
-                    role="button"
-                    aria-label="Bearbeiten"
-                    tabIndex={0}
-                    style={{
-                      marginLeft: 6,
-                      color: "#384b80",
-                      fontSize: 14,
-                      cursor: "pointer",
-                      background: "none",
-                      border: "none"
-                    }}
-                    onClick={e => {
-                      e.stopPropagation();
-                      setEditChatId(chat.id);
-                      setEditTitle(chat.title);
-                    }}
-                  >🖉</span>
-                </button>
-              )}
-            </div>
+            <button
+              key={chat.id}
+              title={chat.title}
+              style={chatItem(chat.id === activeChatId)}
+              onClick={() => setActiveChatId(chat.id)}
+            >
+              <span style={{
+                display: "inline-block",
+                maxWidth: "100%",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap"
+              }}>
+                {chat.title || 'Neuer Chat'}
+              </span>
+            </button>
           ))}
         </div>
 
@@ -434,19 +435,10 @@ export default function Home() {
             style={inputStyle}
             disabled={loading}
           />
-          <button
-            type="submit"
-            disabled={loading || !input.trim()}
-            style={sendBtn}
-            onMouseDown={(e) => { if (!(loading || !input.trim())) e.currentTarget.style.transform = "scale(0.98)"; }}
-            onMouseUp={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
-          >
-            Senden
-          </button>
+          <button type="submit" disabled={loading || !input.trim()} style={sendBtn}>Senden</button>
         </form>
       </main>
 
-      {/* Dezente Scrollbar */}
       <style jsx global>{`
         * { box-sizing: border-box; }
         ::-webkit-scrollbar { width: 10px; height: 10px; }
