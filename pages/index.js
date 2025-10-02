@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
-import { supabase } from "../supabaseClient"; // Importiere deinen Supabase-Client!
+import { supabase } from "../supabaseClient";
+import AuthForm from './AuthForm'; // Stelle sicher, dass sie im gleichen Ordner liegt!
 
 export default function Home() {
+  const [user, setUser] = useState(null);
   const [chats, setChats] = useState([]);
   const [activeChatId, setActiveChatId] = useState(null);
   const [input, setInput] = useState("");
@@ -11,13 +13,30 @@ export default function Home() {
 
   const SYSTEM_PROMPT = "Du bist ein freundlicher, deutschsprachiger KI-Chatassistent.";
 
-  // On mount: Chats aus Supabase laden
+  // Beim Mount: User Session holen & Listener setzen
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setUser(data));
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+    return () => {
+      listener.subscription.unsubscribe();
+    };
+  }, []);
+
+  // Chats für eingeloggten User laden
   useEffect(() => {
     async function fetchChats() {
       setIsLoadingChats(true);
+      if (!user) {
+        setChats([]);
+        setIsLoadingChats(false);
+        return;
+      }
       let { data, error } = await supabase
         .from("chats")
         .select("*")
+        .eq("user_id", user.id)
         .order("created_at", { ascending: true });
       if (!error && data) {
         setChats(data);
@@ -26,19 +45,19 @@ export default function Home() {
       setIsLoadingChats(false);
     }
     fetchChats();
-  }, []);
+  }, [user]);
 
-  // Automatisch ans Ende scrollen, wenn sich Chat ändert
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeChatId, chats, loading]);
 
-  // Chat anlegen in Cloud
+  // Chat anlegen – User zuweisen
   const handleNewChat = async () => {
+    if (!user) return;
     const chatTitle = `Chat #${chats.length + 1}`;
     const { data, error } = await supabase
       .from("chats")
-      .insert([{ title: chatTitle, messages: [] }])
+      .insert([{ title: chatTitle, messages: [], user_id: user.id }])
       .select()
       .single();
 
@@ -49,16 +68,14 @@ export default function Home() {
     }
   };
 
-  // Message senden und in Cloud speichern
+  // Nachricht senden & speichern
   const handleSend = async (e) => {
     e.preventDefault();
     if (!input.trim() || loading || !activeChatId) return;
-
     const userMsg = { sender: "Du", text: input };
     const currentChat = chats.find(c => c.id === activeChatId);
     const newMessages = [...(currentChat?.messages || []), userMsg];
 
-    // KI-Kontext
     const openaiHistory = [
       { role: "system", content: SYSTEM_PROMPT },
       ...newMessages
@@ -71,7 +88,6 @@ export default function Home() {
     ];
 
     setLoading(true);
-    // Schreibe Usernachricht rein (so fühlt es sich sofort responsiv an)
     setChats(chs =>
       chs.map(chat =>
         chat.id === activeChatId
@@ -81,7 +97,7 @@ export default function Home() {
     );
     setInput("");
 
-    // KI-Request
+    // KI-Request wie gehabt
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -99,16 +115,15 @@ export default function Home() {
       answer = await res.text();
     }
 
-    // Speichere KI-Antwort direkt in DB und im State
     const updatedMessages = [...newMessages, { sender: "KI", text: answer }];
-    const { data: updatedChat, error } = await supabase
+    const { data: updatedChat, error: errUpdate } = await supabase
       .from("chats")
       .update({ messages: updatedMessages })
       .eq("id", activeChatId)
       .select()
       .single();
 
-    if (!error && updatedChat) {
+    if (!errUpdate && updatedChat) {
       setChats(chs =>
         chs.map(chat =>
           chat.id === activeChatId
@@ -120,7 +135,12 @@ export default function Home() {
     setLoading(false);
   };
 
-  // Design-Styles
+  // Soll kein User eingeloggt sein: Login-UI statt Chat!
+  if (!user) {
+    return <AuthForm />;
+  }
+
+  // Design & UI wie gehabt ...
   const bubbleStyle = sender => ({
     maxWidth: "70%",
     padding: "12px 16px",
@@ -287,17 +307,3 @@ export default function Home() {
     </div>
   );
 }
-
-import AuthForm from './AuthForm';
-
-function App() {
-  return (
-    <div>
-      <AuthForm />
-      {/* Hier später dein Chat-Archiv etc. */}
-    </div>
-  );
-}
-
-export default App;
-
