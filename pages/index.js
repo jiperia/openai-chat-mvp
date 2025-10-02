@@ -1,3 +1,4 @@
+// pages/index.js
 import { useState, useRef, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import AuthForm from '../AuthForm';
@@ -22,7 +23,7 @@ export default function Home() {
     return () => listener?.subscription?.unsubscribe?.();
   }, []);
 
-  // ---------- Chats laden (NEU: absteigend, neueste oben) ----------
+  // ---------- Chats laden (absteigend, neueste oben) ----------
   useEffect(() => {
     async function fetchChats() {
       setIsLoadingChats(true);
@@ -35,7 +36,7 @@ export default function Home() {
         .from('chats')
         .select('*')
         .eq('user_id', user.id)
-        .order('created_at', { ascending: false }); // neueste zuerst
+        .order('created_at', { ascending: false });
 
       if (!error && data) {
         setChats(data);
@@ -50,23 +51,20 @@ export default function Home() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeChatId, chats, loading]);
 
-  // ---------- Titel-Helfer ----------
+  // ---------- Titel-Helper ----------
   function simpleTitleFromText(text, maxWords = 7) {
     if (!text) return 'Neuer Chat';
-    // Klammern/URLs/überflüssiges weg
     let s = text
       .replace(/\s+/g, ' ')
       .replace(/\[[^\]]*\]|\([^\)]*\)/g, '')
       .replace(/https?:\/\/\S+/g, '')
       .trim();
     const words = s.split(' ').slice(0, maxWords).join(' ');
-    // Satzzeichen am Ende weg, ersten Buchstaben groß
     s = words.replace(/[.,;:!?-]+$/g, '');
     return s.charAt(0).toUpperCase() + s.slice(1);
   }
 
   async function generateTitleSmart(firstMessage) {
-    // Optionaler smarter Endpoint. Fällt zurück auf simpleTitleFromText.
     try {
       const res = await fetch('/api/generateTitle', {
         method: 'POST',
@@ -86,7 +84,6 @@ export default function Home() {
   }
 
   async function ensureTitleForChat(chatId, firstUserMessageText) {
-    // Holt Chat, prüft, ob noch Platzhalter/nummeriert, setzt dann Titel.
     const chat = chats.find(c => c.id === chatId);
     if (!chat) return;
 
@@ -151,16 +148,13 @@ export default function Home() {
     ];
 
     setLoading(true);
-    // sofort im UI anzeigen
     setChats(chs => chs.map(chat => chat.id === activeChatId ? { ...chat, messages: newMessages } : chat));
     setInput('');
 
-    // ---- Titel nach erster Nachricht setzen (nicht blockierend) ----
-    if (isFirstMessage) {
-      ensureTitleForChat(activeChatId, userMsg.text);
-    }
+    // Titel nach erster Nachricht setzen (nicht blockierend)
+    if (isFirstMessage) ensureTitleForChat(activeChatId, userMsg.text);
 
-    // ---- KI-Antwort holen ----
+    // KI-Antwort holen
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -204,9 +198,11 @@ export default function Home() {
     accent: "#2f6bff"
   };
 
-  // ---------- Styles ----------
+  // ---------- Layout / Styles ----------
+  const SIDEBAR_W = 280;
+
   const sidebarStyle = {
-    width: 280,
+    width: SIDEBAR_W,
     background: C.panel,
     minHeight: "100vh",
     display: "flex",
@@ -222,10 +218,11 @@ export default function Home() {
     background: C.bg,
     minHeight: "100vh",
     width: "100%",
-    paddingLeft: 280,
+    paddingLeft: SIDEBAR_W,   // exakt so breit wie Sidebar
     boxSizing: "border-box",
     fontFamily: '"Inter","SF Pro Text","Segoe UI",system-ui,-apple-system,sans-serif',
-    color: C.text
+    color: C.text,
+    overflowX: "hidden"
   };
 
   const brandStyle = {
@@ -278,7 +275,8 @@ export default function Home() {
   };
 
   const chatWrap = {
-    maxWidth: 860,
+    maxWidth: 860,        // Inhalt etwas breiter als Input
+    width: "92vw",
     margin: "0 auto",
     padding: "0 20px 26px"
   };
@@ -296,19 +294,28 @@ export default function Home() {
     lineHeight: 1.6,
     fontSize: 16,
     whiteSpace: "pre-wrap",
+    wordBreak: "break-word",
+    overflowWrap: "anywhere",
     background: role === "user" ? C.panel : "#0f1218",
     border: `1px solid ${C.border}`
   });
 
-  const inputBar = {
-    display: "flex",
-    gap: 8,
-    padding: 16,
-    borderTop: `1px solid ${C.border}`,
+  // Input-Leiste (schmal, ChatGPT-Style)
+  const inputBarOuter = {
     position: "sticky",
     bottom: 0,
     background: `${C.bg}cc`,
-    backdropFilter: "saturate(120%) blur(6px)"
+    backdropFilter: "saturate(120%) blur(6px)",
+    borderTop: `1px solid ${C.border}`,
+    padding: "16px 0"
+  };
+
+  const inputBarInner = {
+    maxWidth: 740,   // schmale Breite
+    width: "92vw",
+    margin: "0 auto",
+    display: "flex",
+    gap: 8
   };
 
   const inputStyle = {
@@ -356,6 +363,9 @@ export default function Home() {
         </div>
 
         <button style={primaryBtn} onClick={handleNewChat}>+ Neuer Chat</button>
+
+        {/* Archiv ~25% nach unten */}
+        <div style={{ height: "25vh" }} />
 
         <div style={{ marginTop: 8, color: C.muted, fontWeight: 600, fontSize: 12, letterSpacing: ".06em", textTransform: "uppercase" }}>
           Archiv
@@ -427,24 +437,30 @@ export default function Home() {
           </div>
         </div>
 
-        <form onSubmit={handleSend} style={inputBar}>
-          <input
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            placeholder="Schreibe eine Nachricht…"
-            style={inputStyle}
-            disabled={loading}
-          />
-          <button type="submit" disabled={loading || !input.trim()} style={sendBtn}>Senden</button>
-        </form>
+        {/* Schmale Input-Leiste */}
+        <div style={inputBarOuter}>
+          <form onSubmit={handleSend} style={inputBarInner}>
+            <input
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              placeholder="Schreibe eine Nachricht…"
+              style={inputStyle}
+              disabled={loading}
+            />
+            <button type="submit" disabled={loading || !input.trim()} style={sendBtn}>
+              Senden
+            </button>
+          </form>
+        </div>
       </main>
 
+      {/* Global: kein horizontales Scrollen */}
       <style jsx global>{`
         * { box-sizing: border-box; }
+        html, body { background: ${C.bg}; overflow-x: hidden; }
         ::-webkit-scrollbar { width: 10px; height: 10px; }
         ::-webkit-scrollbar-thumb { background: ${C.border}; border-radius: 10px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        html, body { background: ${C.bg}; }
       `}</style>
     </div>
   );
