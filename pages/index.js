@@ -1,4 +1,3 @@
-// pages/index.js
 import { useState, useRef, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import AuthForm from '../AuthForm';
@@ -215,4 +214,124 @@ export default function Home() {
   const primaryBtn = { background:C.panelHover, color:C.text, border:`1px solid ${C.border}`, padding:"10px 12px", borderRadius:10, fontWeight:600, fontSize:14, textAlign:"left", cursor:"pointer" };
   const chatItem = (active)=>({ ...primaryBtn, position:'relative', paddingRight:86, background:active?"#0f121a":"transparent", border:`1px solid ${active ? C.accent+"33":"transparent"}`, color:active?C.text:C.sub });
   const chatListStyle = { display:"flex", flexDirection:"column", gap:6, marginTop:6, overflowY:"auto" };
-  const headerStyle = { position:"sticky", top:0, backdropFilter:"saturate(120%) blur(6px)", background:`${C.bg}cc`, borderBottom:`1
+  const headerStyle = { position:"sticky", top:0, backdropFilter:"saturate(120%) blur(6px)", background:`${C.bg}cc`, borderBottom:`1px solid ${C.border}`, padding:"14px 0", zIndex:1 };
+  const chatWrap = { maxWidth:860, width:"92vw", margin:"0 auto", padding:"0 20px 26px" };
+  const messageRow = (role)=>({ display:"flex", justifyContent: role==="user"?"flex-end":"flex-start", margin:"10px 0" });
+  const bubble = (role)=>({ maxWidth:"88%", padding:"12px 14px", borderRadius:12, lineHeight:1.6, fontSize:16, whiteSpace:"pre-wrap", wordBreak:"break-word", overflowWrap:"anywhere", background: role==="user"?C.panel:"#0f1218", border:`1px solid ${C.border}` });
+  const inputBarOuter = { position:"sticky", bottom:0, background:`${C.bg}cc`, backdropFilter:"saturate(120%) blur(6px)", borderTop:`1px solid ${C.border}`, padding:"16px 0" };
+  const inputBarInner = { maxWidth:740, width:"92vw", margin:"0 auto", display:"flex", gap:8 };
+  const inputStyle = { flex:1, padding:"14px 16px", borderRadius:12, border:`1px solid ${C.border}`, background:C.panel, color:C.text, fontSize:16, outline:"none" };
+  const sendBtn = { background:C.accent, color:"#fff", border:"none", padding:"12px 16px", borderRadius:12, fontWeight:700, fontSize:14, opacity: loading || !input.trim() ? 0.65 : 1, cursor: loading || !input.trim() ? "not-allowed" : "pointer" };
+
+  const currentMessages = chats.find(c => c.id === activeChatId)?.messages || [];
+
+  if (!user) {
+    return (
+      <div style={mainBgStyle}>
+        <div style={{ width:"100vw", height:"100vh", display:"flex", alignItems:"center", justifyContent:"center" }}>
+          <AuthForm />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display:"flex", width:"100vw", minHeight:"100vh", background:C.bg }}>
+      {/* Sidebar */}
+      <aside style={sidebarStyle}>
+        <div style={brandStyle}>
+          <span style={{ width:8, height:8, borderRadius:4, background:C.accent, display:"inline-block" }} />
+          <span>Jiperia</span><span style={{ color:C.muted, fontWeight:600 }}>MVP</span>
+        </div>
+
+        <button style={primaryBtn} onClick={handleNewChat}>+ Neuer Chat</button>
+        <div style={{ height:"25vh" }} />
+
+        <div style={{ marginTop:8, color:C.muted, fontWeight:600, fontSize:12, letterSpacing:".06em", textTransform:"uppercase" }}>Archiv</div>
+        {isLoadingChats && <div style={{ color: C.muted, fontSize: 13, padding: "8px 2px" }}>Lädt…</div>}
+
+        <div style={chatListStyle}>
+          {chats.map(chat => (
+            <div key={chat.id} style={{ position:'relative' }}>
+              <button
+                title={chat.title}
+                style={chatItem(chat.id === activeChatId)}
+                onClick={() => setActiveChatId(chat.id)}
+              >
+                <span style={{ display:"inline-block", maxWidth:"100%", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                  {chat.title || 'Neuer Chat'}
+                </span>
+              </button>
+
+              {/* Hover-Buttons rechts */}
+              <div style={{ position:'absolute', right:10, top:6, display:'flex', gap:6 }}>
+                <button onClick={() => handleRenameChat(chat.id)} title="Umbenennen"
+                        style={{ background:'transparent', border:`1px solid ${C.border}`, color:C.sub, padding:'6px 8px', borderRadius:8, cursor:'pointer' }}>✏️</button>
+                <button onClick={() => handleToggleShare(chat.id)} title={chat.is_public ? 'Teilen aus' : 'Teilen an'}
+                        style={{ background:'transparent', border:`1px solid ${C.border}`, color: chat.is_public ? '#6ee7b7' : C.sub, padding:'6px 8px', borderRadius:8, cursor:'pointer' }}>🔗</button>
+                <button onClick={() => handleDeleteChat(chat.id)} title="Löschen"
+                        style={{ background:'transparent', border:`1px solid ${C.border}`, color:'#f87171', padding:'6px 8px', borderRadius:8, cursor:'pointer' }}>🗑️</button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ flex:1 }} />
+        <div style={{ fontSize:12, color:C.muted, borderTop:`1px solid ${C.border}`, paddingTop:10, marginTop:10 }}>
+          Eingeloggt als<br /><span style={{ fontWeight:600, color:C.sub }}>{user?.email}</span>
+        </div>
+      </aside>
+
+      {/* Main */}
+      <main style={mainBgStyle}>
+        <div style={headerStyle}>
+          <div style={{ ...chatWrap, paddingTop:0, paddingBottom:0 }}>
+            <h1 style={{ margin:0, fontSize:16, fontWeight:700, color:C.text }}>KI-Chat</h1>
+            <div style={{ marginTop:4, fontSize:13, color:C.muted }}>Frag mich irgendwas.</div>
+          </div>
+        </div>
+
+        <div style={{ ...chatWrap, paddingTop:18 }}>
+          <div style={{ minHeight:"56vh" }}>
+            {currentMessages.length === 0 && !loading && (
+              <div style={{ color:C.muted, textAlign:"center", marginTop:"18vh", fontSize:15 }}>
+                Starte mit einer Frage – z. B. <em>„Erklär mir JSON in 2 Sätzen“</em>
+              </div>
+            )}
+
+            {currentMessages.map((msg, i) => {
+              const role = msg.sender === "Du" ? "user" : "assistant";
+              return (
+                <div key={i} style={messageRow(role === "user" ? "user" : "assistant")}>
+                  <div style={bubble(role === "user" ? "user" : "assistant")}>{msg.text}</div>
+                </div>
+              );
+            })}
+
+            {loading && (
+              <div style={messageRow("assistant")}>
+                <div style={bubble("assistant")}><i>Antwort kommt …</i></div>
+              </div>
+            )}
+            <div ref={chatEndRef} />
+          </div>
+        </div>
+
+        <div style={inputBarOuter}>
+          <form onSubmit={handleSend} style={inputBarInner}>
+            <input value={input} onChange={e => setInput(e.target.value)} placeholder="Schreibe eine Nachricht…" style={inputStyle} disabled={loading} />
+            <button type="submit" disabled={loading || !input.trim()} style={sendBtn}>Senden</button>
+          </form>
+        </div>
+      </main>
+
+      <style jsx global>{`
+        * { box-sizing: border-box; }
+        html, body { background: ${C.bg}; overflow-x: hidden; }
+        ::-webkit-scrollbar { width: 10px; height: 10px; }
+        ::-webkit-scrollbar-thumb { background: ${C.border}; border-radius: 10px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+      `}</style>
+    </div>
+  );
+}
