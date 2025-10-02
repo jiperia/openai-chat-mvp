@@ -9,13 +9,14 @@ export default function Home() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [isLoadingChats, setIsLoadingChats] = useState(true);
+  const [editChatId, setEditChatId] = useState(null);
+  const [editTitle, setEditTitle] = useState("");
   const chatEndRef = useRef(null);
 
   const SYSTEM_PROMPT = 'Du bist ein freundlicher, deutschsprachiger KI-Chatassistent.';
 
   // ---- Auth ----
   useEffect(() => {
-    // supabase.auth.getUser() liefert { data: { user } }
     supabase.auth.getUser().then(({ data }) => setUser(data?.user ?? null));
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
@@ -23,7 +24,7 @@ export default function Home() {
     return () => listener?.subscription?.unsubscribe?.();
   }, []);
 
-  // ---- Chats laden (NEU: absteigend, neueste oben) ----
+  // ---- Chats laden (absteigend, neueste oben) ----
   useEffect(() => {
     async function fetchChats() {
       setIsLoadingChats(true);
@@ -36,11 +37,11 @@ export default function Home() {
         .from('chats')
         .select('*')
         .eq('user_id', user.id)
-        .order('created_at', { ascending: false }); // <— gedreht
+        .order('created_at', { ascending: false });
 
       if (!error && data) {
         setChats(data);
-        if (data.length > 0) setActiveChatId(data[0].id); // <— aktiv: neuester
+        if (data.length > 0) setActiveChatId(data[0].id);
       }
       setIsLoadingChats(false);
     }
@@ -52,7 +53,7 @@ export default function Home() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeChatId, chats, loading]);
 
-  // ---- Neuer Chat (NEU: oben einfügen) ----
+  // ---- Neuer Chat (oben einfügen) ----
   const handleNewChat = async () => {
     if (!user) return;
     const chatTitle = `Chat #${chats.length + 1}`;
@@ -63,7 +64,7 @@ export default function Home() {
       .single();
 
     if (!error && data) {
-      setChats(chs => [data, ...chs]); // <— unshift statt push
+      setChats(chs => [data, ...chs]);
       setActiveChatId(data.id);
       setInput('');
     }
@@ -301,22 +302,84 @@ export default function Home() {
 
         <div style={chatListStyle}>
           {chats.map(chat => (
-            <button
-              key={chat.id}
-              title={chat.title}
-              style={chatItem(chat.id === activeChatId)}
-              onClick={() => setActiveChatId(chat.id)}
-            >
-              <span style={{
-                display: "inline-block",
-                maxWidth: "100%",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap"
-              }}>
-                {chat.title}
-              </span>
-            </button>
+            <div key={chat.id} style={{ position: "relative" }}>
+              {editChatId === chat.id ? (
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    if (!editTitle.trim()) return;
+                    const { data: updated, error } = await supabase
+                      .from("chats")
+                      .update({ title: editTitle })
+                      .eq("id", chat.id)
+                      .select()
+                      .single();
+                    if (!error && updated) {
+                      setChats(chs => chs.map(c => c.id === chat.id ? { ...c, title: editTitle } : c));
+                      setEditChatId(null);
+                      setEditTitle("");
+                    }
+                  }}
+                  style={{ display: "flex", gap: 4, alignItems: "center" }}
+                >
+                  <input
+                    value={editTitle}
+                    onChange={e => setEditTitle(e.target.value)}
+                    autoFocus
+                    style={{
+                      padding: "7px 8px",
+                      borderRadius: 7,
+                      border: "1px solid #444",
+                      fontSize: 14,
+                      background: "#181924",
+                      color: "#fff",
+                      width: 90,
+                      marginRight: 4
+                    }}
+                    onBlur={() => setEditChatId(null)}
+                  />
+                  <button type="submit" style={{
+                    border: "none", background: "#2f6bff", color: "#fff",
+                    borderRadius: 5, padding: "7px 9px", fontWeight: 700, fontSize: 12, cursor: "pointer"
+                  }}>OK</button>
+                </form>
+              ) : (
+                <button
+                  title={chat.title}
+                  style={chatItem(chat.id === activeChatId)}
+                  onClick={() => setActiveChatId(chat.id)}
+                  onDoubleClick={() => { setEditChatId(chat.id); setEditTitle(chat.title); }}
+                >
+                  <span style={{
+                    display: "inline-block",
+                    maxWidth: "80%",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap"
+                  }}>
+                    {chat.title}
+                  </span>
+                  <span
+                    role="button"
+                    aria-label="Bearbeiten"
+                    tabIndex={0}
+                    style={{
+                      marginLeft: 6,
+                      color: "#384b80",
+                      fontSize: 14,
+                      cursor: "pointer",
+                      background: "none",
+                      border: "none"
+                    }}
+                    onClick={e => {
+                      e.stopPropagation();
+                      setEditChatId(chat.id);
+                      setEditTitle(chat.title);
+                    }}
+                  >🖉</span>
+                </button>
+              )}
+            </div>
           ))}
         </div>
 
@@ -383,7 +446,7 @@ export default function Home() {
         </form>
       </main>
 
-      {/* dezente Scrollbar */}
+      {/* Dezente Scrollbar */}
       <style jsx global>{`
         * { box-sizing: border-box; }
         ::-webkit-scrollbar { width: 10px; height: 10px; }
