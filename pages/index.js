@@ -11,9 +11,11 @@ export default function Home() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [isLoadingChats, setIsLoadingChats] = useState(true);
+
+  // menu
   const [menuOpenFor, setMenuOpenFor] = useState(null); // chatId oder null
-  const chatEndRef = useRef(null);
   const menuRef = useRef(null);
+  const chatEndRef = useRef(null);
 
   const SYSTEM_PROMPT = 'Du bist ein freundlicher, deutschsprachiger KI-Chatassistent.';
 
@@ -132,9 +134,7 @@ export default function Home() {
     if (!window.confirm('Diesen Chat wirklich löschen?')) return;
     await supabase.from('chats').delete().eq('id', chatId);
     setChats(prev => prev.filter(c => c.id !== chatId));
-    if (activeChatId === chatId) {
-      setActiveChatId(chats.find(c => c.id !== chatId)?.id ?? null);
-    }
+    if (activeChatId === chatId) setActiveChatId(chats.find(c => c.id !== chatId)?.id ?? null);
   }
 
   async function handleToggleShare(chatId) {
@@ -271,19 +271,21 @@ export default function Home() {
     setLoading(false);
   };
 
-  // ---------------- Styles ----------------
+  // ---------------- Styles (ChatGPT-inspiriert) ----------------
   const C = {
     bg: '#0e0f13',
-    panel: '#111319',
-    panelHover: '#171a22',
-    border: '#1f2330',
-    text: '#e7e9ee',
-    sub: '#aab1c2',
-    muted: '#8b91a1',
-    accent: '#2f6bff'
+    panel: '#12141a',
+    panelHover: '#181b22',
+    border: '#232732',
+    text: '#eef1f6',
+    sub: '#b2b8c6',
+    muted: '#8e95a4',
+    accent: '#2f6bff',
+    green: '#7dd3a7',
+    red: '#f97070'
   };
 
-  const SIDEBAR_W = 300;
+  const SIDEBAR_W = 320;
 
   const sidebarStyle = {
     width: SIDEBAR_W,
@@ -292,7 +294,7 @@ export default function Home() {
     display: 'flex',
     flexDirection: 'column',
     gap: 14,
-    padding: '22px 16px',
+    padding: '22px 14px',
     borderRight: `1px solid ${C.border}`,
     position: 'fixed',
     left: 0, top: 0
@@ -325,24 +327,52 @@ export default function Home() {
     background: C.panelHover,
     color: C.text,
     border: `1px solid ${C.border}`,
-    padding: '11px 12px',
-    borderRadius: 12,
+    padding: '12px 14px',
+    borderRadius: 14,
     fontWeight: 600,
     fontSize: 14,
     textAlign: 'left',
     cursor: 'pointer',
-    transition: 'transform .12s ease, background .12s ease'
+    transition: 'background .12s ease, transform .12s ease'
   };
 
   const chatItem = (active) => ({
-    ...primaryBtn,
-    position: 'relative',
-    paddingRight: 44,
-    background: active ? '#0f121a' : 'transparent',
-    border: `1px solid ${active ? C.accent + '33' : 'transparent'}`,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    width: '100%',
+    background: active ? '#0f1218' : 'transparent',
     color: active ? C.text : C.sub,
-    overflow: 'hidden'
+    border: `1px solid ${active ? C.accent + '33' : 'transparent'}`,
+    padding: '12px 14px',
+    borderRadius: 14,
+    cursor: 'pointer',
+    position: 'relative',
+    transition: 'background .12s ease',
+    outline: 'none'
   });
+
+  const chatTitleStyle = {
+    flex: 1,
+    minWidth: 0,
+    fontWeight: 640,
+    overflow: 'hidden',
+    whiteSpace: 'nowrap',
+    textOverflow: 'ellipsis'
+  };
+
+  const dotsBtn = {
+    background: 'transparent',
+    border: `1px solid ${C.border}`,
+    color: C.sub,
+    width: 28,
+    height: 28,
+    lineHeight: '26px',
+    textAlign: 'center',
+    borderRadius: 8,
+    cursor: 'pointer',
+    display: 'none' // nur bei Hover sichtbar
+  };
 
   const chatListStyle = {
     display: 'flex',
@@ -429,34 +459,23 @@ export default function Home() {
     cursor: loading || !input.trim() ? 'not-allowed' : 'pointer'
   };
 
-  // --- 3-Punkte-Menü Styles ---
-  const dotsBtn = {
-    background: 'transparent',
-    border: `1px solid ${C.border}`,
-    color: C.sub,
-    width: 28,
-    height: 28,
-    lineHeight: '26px',
-    textAlign: 'center',
-    borderRadius: 8,
-    cursor: 'pointer',
-    display: 'none' // nur bei Hover sichtbar (siehe globales CSS)
-  };
-
-  const menuPopover = {
+  const menuCard = {
     position: 'absolute',
     right: 6,
-    top: 44,
-    background: C.panel,
+    top: 46,
+    background: '#171a21',
     border: `1px solid ${C.border}`,
-    borderRadius: 12,
-    boxShadow: '0 12px 30px rgba(0,0,0,.42)',
+    borderRadius: 16,
+    boxShadow: '0 18px 50px rgba(0,0,0,.5)',
     overflow: 'hidden',
-    zIndex: 10,
-    minWidth: 220
+    zIndex: 20,
+    minWidth: 260
   };
 
-  const menuItem = {
+  const menuRow = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 12,
     width: '100%',
     textAlign: 'left',
     padding: '12px 14px',
@@ -467,9 +486,7 @@ export default function Home() {
     fontSize: 14
   };
 
-  const Divider = () => (
-    <div style={{ height: 1, background: C.border, opacity: .7 }} />
-  );
+  const Divider = () => <div style={{ height: 1, background: C.border, opacity: .7 }} />;
 
   // ---------------- Rendering ----------------
   const currentMessages = chats.find(c => c.id === activeChatId)?.messages || [];
@@ -490,15 +507,22 @@ export default function Home() {
       <aside style={sidebarStyle}>
         <div style={brandStyle}>
           <span style={{ width: 8, height: 8, borderRadius: 4, background: C.accent, display: 'inline-block' }} />
-          <span>Jiperia</span><span style={{ color: C.muted, fontWeight: 600 }}>MVP</span>
+          <span>Jiperia</span><span style={{ color: C.muted, fontWeight: 600, marginLeft: 6 }}>MVP</span>
         </div>
 
-        <button style={primaryBtn} onClick={handleNewChat}>+ Neuer Chat</button>
+        <button
+          style={primaryBtn}
+          onMouseDown={(e)=> e.currentTarget.style.transform='scale(.99)'}
+          onMouseUp={(e)=> e.currentTarget.style.transform='scale(1)'}
+          onClick={handleNewChat}
+        >
+          + Neuer Chat
+        </button>
 
-        <div style={{ height: '25vh' }} />
+        <div style={{ height: '22vh' }} />
 
         <div style={{ marginTop: 4, color: C.muted, fontWeight: 600, fontSize: 12, letterSpacing: '.06em', textTransform: 'uppercase' }}>
-          Archiv
+          Chats
         </div>
 
         {isLoadingChats && <div style={{ color: C.muted, fontSize: 13, padding: '8px 2px' }}>Lädt…</div>}
@@ -509,73 +533,83 @@ export default function Home() {
             const isMenuOpen = menuOpenFor === chat.id;
             return (
               <div key={chat.id} style={{ position: 'relative' }} ref={isMenuOpen ? menuRef : null}>
-                {/* Haupt-Row */}
-                <button
+                {/* Row */}
+                <div
                   className="chat-row"
-                  title={chat.title}
-                  style={chatItem(isActive)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e)=> { if (e.key === 'Enter') setActiveChatId(chat.id); }}
                   onClick={() => setActiveChatId(chat.id)}
+                  style={chatItem(isActive)}
                 >
-                  <span style={{
-                    display: 'inline-block',
-                    maxWidth: 'calc(100% - 44px)',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    fontWeight: 640
-                  }}>
-                    {chat.title || 'Neuer Chat'}
-                  </span>
+                  <span style={chatTitleStyle}>{chat.title || 'Neuer Chat'}</span>
 
-                  {/* Dots rechts (nur bei Hover sichtbar) */}
-                  <span style={{ position: 'absolute', right: 8, top: 7 }}>
-                    <button
-                      className="dots"
-                      aria-label="Menü"
-                      title="Menü"
-                      style={dotsBtn}
-                      onClick={(e) => { e.stopPropagation(); setMenuOpenFor(p => p === chat.id ? null : chat.id); }}
-                    >
-                      {/* vertikale Punkte: */}
-                      <span style={{ fontSize: 18, position: 'relative', top: -1 }}>⋮</span>
-                    </button>
-                  </span>
-                </button>
+                  {/* Ellipsis (nur bei Hover sichtbar) */}
+                  <button
+                    className="dots"
+                    aria-label="Menü"
+                    title="Menü"
+                    style={dotsBtn}
+                    onClick={(e) => { e.stopPropagation(); setMenuOpenFor(p => p === chat.id ? null : chat.id); }}
+                  >
+                    <span style={{ fontSize: 18, position: 'relative', top: -1 }}>⋮</span>
+                  </button>
+                </div>
 
-                {/* Popover-Menü */}
+                {/* Popover mit Caret */}
                 {isMenuOpen && (
-                  <div style={menuPopover} onClick={e => e.stopPropagation()}>
-                    <button
-                      style={menuItem}
-                      onMouseEnter={(e)=> e.currentTarget.style.background = C.panelHover}
-                      onMouseLeave={(e)=> e.currentTarget.style.background = 'transparent'}
-                      onClick={() => { setMenuOpenFor(null); handleRenameChat(chat.id); }}
-                    >
-                      Umbenennen
-                    </button>
+                  <>
+                    {/* Caret */}
+                    <div style={{
+                      position: 'absolute', right: 16, top: 40, width: 0, height: 0,
+                      borderLeft: '8px solid transparent',
+                      borderRight: '8px solid transparent',
+                      borderBottom: `10px solid #171a21`,
+                      filter: 'drop-shadow(0 -1px 0 ' + C.border + ')'
+                    }} />
+                    {/* Card */}
+                    <div style={menuCard} onClick={e => e.stopPropagation()}>
+                      {/* Teilen */}
+                      <button
+                        style={menuRow}
+                        onMouseEnter={(e)=> e.currentTarget.style.background = C.panelHover}
+                        onMouseLeave={(e)=> e.currentTarget.style.background = 'transparent'}
+                        onClick={() => { setMenuOpenFor(null); handleToggleShare(chat.id); }}
+                      >
+                        {/* link icon */}
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M15 8a3 3 0 1 0-2.83-4h0L7 9m2 6 5.17 5a3 3 0 1 0 2.83-4" stroke={chat.is_public ? C.green : C.text} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                        <span style={{ color: chat.is_public ? C.green : C.text }}>
+                          {chat.is_public ? 'Link teilen (aktiv)' : 'Teilen aktivieren'}
+                        </span>
+                      </button>
 
-                    <Divider />
+                      <Divider />
 
-                    <button
-                      style={{ ...menuItem, color: chat.is_public ? '#6ee7b7' : C.text }}
-                      onMouseEnter={(e)=> e.currentTarget.style.background = C.panelHover}
-                      onMouseLeave={(e)=> e.currentTarget.style.background = 'transparent'}
-                      onClick={() => { setMenuOpenFor(null); handleToggleShare(chat.id); }}
-                    >
-                      {chat.is_public ? 'Teilen deaktivieren' : 'Teilen aktivieren'}
-                    </button>
+                      {/* Umbenennen */}
+                      <button
+                        style={menuRow}
+                        onMouseEnter={(e)=> e.currentTarget.style.background = C.panelHover}
+                        onMouseLeave={(e)=> e.currentTarget.style.background = 'transparent'}
+                        onClick={() => { setMenuOpenFor(null); handleRenameChat(chat.id); }}
+                      >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 21h4l11-11a2.828 2.828 0 10-4-4L4 17v4z" stroke={C.text} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                        Umbenennen
+                      </button>
 
-                    <Divider />
+                      <Divider />
 
-                    <button
-                      style={{ ...menuItem, color: '#f87171' }}
-                      onMouseEnter={(e)=> e.currentTarget.style.background = C.panelHover}
-                      onMouseLeave={(e)=> e.currentTarget.style.background = 'transparent'}
-                      onClick={() => { setMenuOpenFor(null); handleDeleteChat(chat.id); }}
-                    >
-                      Löschen
-                    </button>
-                  </div>
+                      {/* Löschen */}
+                      <button
+                        style={{ ...menuRow, color: C.red }}
+                        onMouseEnter={(e)=> e.currentTarget.style.background = C.panelHover}
+                        onMouseLeave={(e)=> e.currentTarget.style.background = 'transparent'}
+                        onClick={() => { setMenuOpenFor(null); handleDeleteChat(chat.id); }}
+                      >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m1 0-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" stroke={C.red} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                        Löschen
+                      </button>
+                    </div>
+                  </>
                 )}
               </div>
             );
@@ -648,7 +682,7 @@ export default function Home() {
 
         /* Dots nur bei Hover der Zeile zeigen */
         .chat-row:hover .dots { display: inline-block !important; }
-        .chat-row:hover { transform: translateY(-1px); }
+        .chat-row:hover { background: ${C.panelHover}; }
       `}</style>
     </div>
   );
