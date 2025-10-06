@@ -7,7 +7,7 @@ import C from '../../styles/tokens';
 export default function InputBar({ value, onChange, onSubmit, disabled }) {
   return (
     <div style={{
-      position: 'sticky', bottom: 0, background: `${C.bg}cc`,
+      position: 'sticky', bottom: 0, background: `C.bg`,
       backdropFilter: 'saturate(120%) blur(6px)',
       borderTop: `1px solid ${C.border}`, padding: '16px 0'
     }}>
