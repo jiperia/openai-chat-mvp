@@ -24,12 +24,19 @@ export default function ChatWindow({ messages, loading, onSend }) {
   }
 
   return (
-    <main style={{
-      background: C.bg, minHeight: '100vh', width: '100%',
-      paddingLeft: sidebarWidth, boxSizing: 'border-box',
-      fontFamily: '"Inter","SF Pro Text","Segoe UI",system-ui,-apple-system,sans-serif',
-      color: C.text, overflowX: 'hidden'
-    }}>
+  <main style={{
+  position: 'relative',
+  background: C.bg,
+  minHeight: '100vh',
+  width: `calc(100vw - ${sidebarWidth}px)`, // <— eigene Spaltenbreite
+  marginLeft: sidebarWidth,                // <— neben die Sidebar setzen
+  boxSizing: 'border-box',
+  fontFamily: '"Inter","SF Pro Text","Segoe UI",system-ui,-apple-system,sans-serif',
+  color: C.text,
+  overflowX: 'hidden',
+  zIndex: 1
+}}>
+
       {/* Header */}
       <div style={{
         position: 'sticky', top: 0, backdropFilter: 'saturate(120%) blur(6px)',
