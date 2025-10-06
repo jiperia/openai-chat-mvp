@@ -1,18 +1,27 @@
 // components/chats/ChatListItem.jsx
-// Zweck: Eine Chat-Zeile in der Sidebar inkl. Hover-Ellipsis und ChatMenu.
-// Props: chat, active, onSelect, onRename, onToggleShare, onDelete
+// Zweck: Eine Chat-Zeile in der Sidebar inkl. 3-Punkte-Menü.
+// Fixes:
+//  - Rename: Prompt im ListItem, ruft onRename(id, title) korrekt auf.
+//  - Kein Layout-Shift: Ellipsis-Button absolut positioniert, keine Border,
+//    Ein-/Ausblenden per Opacity (Hover) statt display: none.
 
 import { useState } from 'react';
 import C from '../../styles/tokens';
 import ChatMenu from './ChatMenu';
 
 export default function ChatListItem({
-  chat, active,
-  onSelect, onRename, onToggleShare, onDelete
+  chat,
+  active,
+  onSelect,
+  onRename,
+  onToggleShare,
+  onDelete,
 }) {
   const [open, setOpen] = useState(false);
+  const [hover, setHover] = useState(false);
 
   const rowStyle = {
+    position: 'relative',
     display: 'flex',
     alignItems: 'center',
     gap: 10,
@@ -23,59 +32,94 @@ export default function ChatListItem({
     padding: '12px 14px',
     borderRadius: 14,
     cursor: 'pointer',
-    position: 'relative',
-    transition: 'background .12s ease'
+    transition: 'background .12s ease',
+    minHeight: 44, // konstante Zeilenhöhe
   };
 
+  // Ab hier: absoluter Ellipsis-Button → kein Einfluss auf Layout/Höhe
   const dotsBtn = {
-    background: 'transparent',
-    border: `1px solid ${C.border}`,
-    color: C.sub,
+    position: 'absolute',
+    right: 10,
+    top: '50%',
+    transform: 'translateY(-50%)',
     width: 28,
     height: 28,
-    lineHeight: '26px',
-    textAlign: 'center',
     borderRadius: 8,
+    background: 'transparent',
+    border: 'none',
+    outline: 'none',
+    color: C.sub,
     cursor: 'pointer',
-    display: open ? 'inline-block' : 'none'
+    opacity: open || hover ? 1 : 0,        // weiches Ein-/Ausblenden
+    transition: 'opacity .12s ease',
   };
 
+  function handleRename() {
+    const current = chat?.title || '';
+    const name = window.prompt('Neuer Titel:', current);
+    if (name && name.trim()) {
+      onRename?.(chat.id, name.trim());
+    }
+  }
+
   return (
-    <div style={{ position: 'relative' }}
-      onMouseEnter={(e)=> { const btn = e.currentTarget.querySelector('.dots'); if (btn) btn.style.display='inline-block'; }}
-      onMouseLeave={(e)=> { if (!open) { const btn = e.currentTarget.querySelector('.dots'); if (btn) btn.style.display='none'; } }}
+    <div
+      style={{ position: 'relative' }}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
     >
       <div
         role="button"
         tabIndex={0}
         onClick={() => onSelect?.(chat.id)}
-        onKeyDown={(e)=> { if (e.key === 'Enter') onSelect?.(chat.id); }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') onSelect?.(chat.id);
+        }}
         style={rowStyle}
+        title={chat.title}
       >
-        <span style={{
-          flex: 1, minWidth: 0, fontWeight: 640,
-          overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis'
-        }}>
+        <span
+          style={{
+            flex: 1,
+            minWidth: 0,
+            fontWeight: 640,
+            overflow: 'hidden',
+            whiteSpace: 'nowrap',
+            textOverflow: 'ellipsis',
+            paddingRight: 36, // Raum, damit Text nicht unter die 3 Punkte läuft
+          }}
+        >
           {chat.title || 'Neuer Chat'}
         </span>
 
         <button
-          className="dots"
           aria-label="Menü"
           title="Menü"
           style={dotsBtn}
-          onClick={(e) => { e.stopPropagation(); setOpen((v)=>!v); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            setOpen((v) => !v);
+          }}
         >
-          <span style={{ fontSize: 18, position: 'relative', top: -1 }}>⋮</span>
+          <span style={{ fontSize: 18, lineHeight: '28px', display: 'block' }}>⋮</span>
         </button>
       </div>
 
       <ChatMenu
         open={open}
         onClose={() => setOpen(false)}
-        onRename={() => { setOpen(false); onRename?.(chat.id); }}
-        onToggleShare={() => { setOpen(false); onToggleShare?.(chat.id); }}
-        onDelete={() => { setOpen(false); onDelete?.(chat.id); }}
+        onRename={() => {
+          setOpen(false);
+          handleRename(); // prompt + onRename(id, title)
+        }}
+        onToggleShare={() => {
+          setOpen(false);
+          onToggleShare?.(chat.id);
+        }}
+        onDelete={() => {
+          setOpen(false);
+          onDelete?.(chat.id);
+        }}
         isPublic={!!chat.is_public}
       />
     </div>
