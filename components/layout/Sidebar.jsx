@@ -47,6 +47,12 @@ export default function Sidebar({
         + Neuer Chat
       </button>
 
+
+{/* Spacer: Abstand zwischen Button und Chatliste */}
+<div style={{ flexGrow: 1, height: '40vh' }} />
+
+
+      
       {/* Section label */}
       <div style={{ marginTop: 16, color: C.muted, fontWeight: 600, fontSize: 12, letterSpacing: '.06em', textTransform: 'uppercase' }}>
         Chats
