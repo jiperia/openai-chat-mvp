@@ -23,7 +23,8 @@ export default function Sidebar({
       padding: '22px 14px',
       borderRight: `1px solid ${C.border}`,
       position: 'fixed',
-      left: 0, top: 0
+      left: 0, top: 0,
+      zIndex: 3
     }}>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 10,
