@@ -1,8 +1,5 @@
 // pages/index.js
-// Zweck: Orchestrierung – verbindet Auth & Chats mit UI-Komponenten.
-// Enthält globalen Stil-Reset und das Layout (Sidebar + ChatWindow).
-// Hinweis: API-Routen (/api/chatStream, /api/generateTitle) + supabaseClient.js bleiben unverändert.
-
+import { useEffect } from 'react';
 import useAuth from '../hooks/useAuth';
 import useChats from '../hooks/useChats';
 import Sidebar from '../components/layout/Sidebar';
@@ -27,6 +24,19 @@ export default function Home() {
     toggleShare,
     sendMessageStreaming,
   } = useChats(user);
+
+  // ---------- GLOBALES EVENT HANDLING (z. B. von Sidebar oder Suche) ----------
+  useEffect(() => {
+    const handler = (e) => {
+      const id = e.detail?.id;
+      if (!id) return;
+      // hier definieren wir, was passiert, wenn Sidebar ein Chat-Event sendet
+      setActiveChatId(id);
+    };
+
+    window.addEventListener('open-chat', handler);
+    return () => window.removeEventListener('open-chat', handler);
+  }, [setActiveChatId]);
 
   // ---------- LOGIN SCREEN ----------
   if (!user) {
