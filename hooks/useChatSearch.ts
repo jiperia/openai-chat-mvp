@@ -1,18 +1,14 @@
+// hooks/useChatSearch.ts
 import { useMemo, useState } from "react";
 
-type Msg = { role?: string; content?: string };
 type Chat = {
   id: string;
   title?: string;
-  // optionale Felder – wir nehmen, was vorhanden ist:
-  date?: string;
   updated_at?: string;
   created_at?: string;
-  lastMessage?: string;
-  preview?: string;
-  snippet?: string;
-  summary?: string;
-  messages?: Msg[]; // wenn du Messages im Objekt hast, nutzen wir die letzten paar
+  messages?: { text?: string }[];
+  // von useChats vorbereitet:
+  searchText?: string;
 };
 
 function norm(s: any) {
@@ -23,74 +19,48 @@ function norm(s: any) {
     .trim();
 }
 
-function buildHaystack(c: Chat) {
-  // Titel + diverse mögliche Textfelder + (optional) die letzten 5 Messages
-  const msgTail = (c.messages?.slice(-5) || [])
-    .map((m) => m?.content || "")
-    .join(" ");
-
-  const hay = [
-    c.title,
-    c.lastMessage,
-    c.preview,
-    c.snippet,
-    c.summary,
-    msgTail,
-  ]
-    .filter(Boolean)
-    .join(" ");
-
-  return norm(hay);
+function haystack(c: Chat) {
+  if (c.searchText) return norm(c.searchText);
+  const title = c.title || "";
+  const tail = Array.isArray(c.messages)
+    ? c.messages.slice(-8).map(m => m?.text || "").join(" ")
+    : "";
+  return norm(`${title} ${tail}`);
 }
 
-function recencyScore(c: Chat) {
-  const d =
-    c.updated_at || c.date || c.created_at || new Date().toISOString();
-  const t = new Date(d).getTime() || 0;
-  // einfache Rangierung: jüngere Chats leicht bevorzugen
-  return t / 1e11; // skaliert klein, damit Content-Treffer dominiert
+function recency(c: Chat) {
+  const d = c.updated_at || c.created_at || "";
+  const t = d ? new Date(d).getTime() : 0;
+  return t / 1e11;
 }
 
 export function useChatSearch(rawChats: Chat[]) {
   const [query, setQuery] = useState("");
+
   const results = useMemo(() => {
     const chats = Array.isArray(rawChats) ? rawChats : [];
     const q = norm(query);
+
     if (!q) {
-      // Standard: jüngste zuerst
       return chats
         .slice()
-        .sort((a, b) => recencyScore(b) - recencyScore(a))
+        .sort((a, b) => recency(b) - recency(a))
         .slice(0, 20);
     }
 
     const terms = q.split(" ").filter(Boolean);
 
-    const scored = chats
+    return chats
       .map((c) => {
-        const title = norm(c.title || "");
-        const hay = buildHaystack(c);
-        // Muss alle Terms enthalten (AND), sonst 0
-        const allTermsPresent = terms.every((t) => hay.includes(t));
-        if (!allTermsPresent) return null;
-
-        // Score: Vorkommen im Titel ist mehr wert, sonst im Inhalt
-        let score = 0;
-        for (const t of terms) {
-          const inTitle = title.includes(t) ? 2 : 0; // Titel doppelt gewichten
-          // einfache Häufigkeitswertung im Inhalt
-          const inBody = (hay.match(new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "g")) || [])
-            .length;
-          score += inTitle + inBody;
-        }
-        score += recencyScore(c); // kleine Recency-Beigabe
-        return { chat: c, score };
+        const hs = haystack(c);
+        if (!terms.every((t) => hs.includes(t))) return null;
+        // Titeltreffer etwas höher, sonst Recency
+        const inTitle = norm(c.title).includes(q) ? 2 : 0;
+        return { chat: c, score: inTitle + recency(c) };
       })
-      .filter(Boolean) as { chat: Chat; score: number }[];
-
-    return scored
+      .filter(Boolean)
       .sort((a, b) => b.score - a.score)
-      .map((s) => s.chat)
+      .map((x) => x.chat)
       .slice(0, 20);
   }, [query, rawChats]);
 
