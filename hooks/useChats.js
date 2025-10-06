@@ -93,13 +93,16 @@ export default function useChats(user) {
       });
     }
 
-    const history = [
-      { role: 'system', content: SYSTEM_PROMPT },
-      ...draft
-        .filter(m => m.text !== '' || m.sender === 'KI')
-        .map(m => (m.sender === 'Du' ? { role: 'user', content: m.text } : (m.text ? { role: 'assistant', content: m.text } : null)))
-        .filter(Boolean)
-    ];
+   const history = [
+  { role: 'system', content: 'Du bist ein freundlicher, deutschsprachiger KI-Chatassistent.' },
+  ...draft
+    .filter(m => m.sender === 'Du' || (m.sender === 'KI' && m.text)) // <-- KI nur mit Text
+    .map(m => m.sender === 'Du'
+      ? { role: 'user', content: m.text }
+      : { role: 'assistant', content: m.text }
+    )
+];
+
 
     try {
       const res = await fetch('/api/chatStream', {
