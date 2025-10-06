@@ -48,3 +48,12 @@ export default function Home() {
     </div>
   );
 }
+
+<style jsx global>{`
+  html, body { margin: 0; padding: 0; background: ${C.bg}; overflow-x: hidden; }
+  * { box-sizing: border-box; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: ${C.border}; border-radius: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+`}</style>
+
