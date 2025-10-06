@@ -40,7 +40,7 @@ export default function ChatWindow({ messages, loading, onSend }) {
       {/* Header */}
       <div style={{
         position: 'sticky', top: 0, backdropFilter: 'saturate(120%) blur(6px)',
-        background: `${C.bg}cc`, borderBottom: `1px solid ${C.border}`,
+        background: C.bg, borderBottom: `1px solid ${C.border}`,
         padding: '16px 0', zIndex: 1
       }}>
         <div style={{ maxWidth: 860, width: '92vw', margin: '0 auto', padding: '0 20px' }}>
