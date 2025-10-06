@@ -1,6 +1,6 @@
 // hooks/useChats.js
-// Zweck: Alle Chat-bezogenen Zustände & Aktionen kapseln (Laden, CRUD, Teilen, Streaming, Auto-Titel).
-// Export: siehe Rückgabewerte unten.
+// Zweck: Alle Chat-Zustände & Aktionen (Laden, CRUD, Teilen, Streaming, Auto-Titel)
+// Zusatz: Für die Suche wird pro Chat ein `searchText` gepflegt (Titel + letzte Messages).
 
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../supabaseClient';
@@ -8,67 +8,125 @@ import { generateTitleSmart } from '../lib/title';
 
 const SYSTEM_PROMPT = 'Du bist ein freundlicher, deutschsprachiger KI-Chatassistent.';
 
+// Hilfsfunktion: Suchtext aus Titel + letzten N Nachrichten bauen
+function buildSearchText(chat, take = 8) {
+  const title = chat?.title || '';
+  const tail = Array.isArray(chat?.messages)
+    ? chat.messages.slice(-take).map(m => m?.text || '').join(' ')
+    : '';
+  return `${title} ${tail}`.toLowerCase();
+}
+
 export default function useChats(user) {
   const [chats, setChats] = useState([]);
   const [activeChatId, setActiveChatId] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // Laden
+  // ---------- Laden ----------
   useEffect(() => {
     if (!user) { setChats([]); setActiveChatId(null); return; }
-    supabase.from('chats')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .then(({ data }) => {
-        setChats(data || []);
-        if (data?.length) setActiveChatId(data[0].id);
-      });
+
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('chats')
+        .select('id, title, created_at, updated_at, messages, is_public, public_id, user_id')
+        .eq('user_id', user.id)
+        .order('updated_at', { ascending: false })  // jüngstes zuerst
+        .order('created_at', { ascending: false });
+
+      if (cancelled) return;
+      setLoading(false);
+
+      if (error) {
+        console.error('load chats error', error);
+        setChats([]);
+        setActiveChatId(null);
+        return;
+      }
+
+      const mapped = (data || []).map(c => ({ ...c, searchText: buildSearchText(c) }));
+      setChats(mapped);
+      if (mapped.length) setActiveChatId(mapped[0].id);
+    })();
+
+    return () => { cancelled = true; };
   }, [user]);
 
-  // Selektionen
+  // ---------- Abgeleitete Werte ----------
   const activeMessages = useMemo(
     () => chats.find(c => c.id === activeChatId)?.messages || [],
     [chats, activeChatId]
   );
 
-  // Aktionen
+  // ---------- Aktionen ----------
   async function newChat() {
+    const payload = { title: 'Neuer Chat', messages: [], user_id: user.id };
     const { data, error } = await supabase
       .from('chats')
-      .insert([{ title: 'Neuer Chat', messages: [], user_id: user.id }])
-      .select()
+      .insert([payload])
+      .select('id, title, created_at, updated_at, messages, is_public, public_id, user_id')
       .single();
-    if (error) throw error;
-    setChats(prev => [data, ...prev]);
-    setActiveChatId(data.id);
+    if (error) { console.error('newChat error', error); return; }
+
+    const created = { ...data, searchText: buildSearchText(data) };
+    setChats(prev => [created, ...prev]);
+    setActiveChatId(created.id);
   }
 
   async function renameChat(id, title) {
     const name = (title ?? '').trim();
     if (!name) return;
-    const { data } = await supabase.from('chats').update({ title: name }).eq('id', id).select().single();
-    if (data) setChats(prev => prev.map(c => (c.id === id ? { ...c, title: name } : c)));
+
+    const { data, error } = await supabase
+      .from('chats')
+      .update({ title: name, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select('id, title, created_at, updated_at, messages, is_public, public_id, user_id')
+      .single();
+
+    if (error) { console.error('renameChat error', error); return; }
+
+    setChats(prev => prev.map(c =>
+      c.id === id ? { ...data, searchText: buildSearchText(data) } : c
+    ));
   }
 
   async function deleteChat(id) {
-    await supabase.from('chats').delete().eq('id', id);
-    setChats(prev => prev.filter(c => c.id !== id));
-    if (activeChatId === id) setActiveChatId(prev => (chats.find(c => c.id !== id)?.id ?? null));
+    const { error } = await supabase.from('chats').delete().eq('id', id);
+    if (error) { console.error('deleteChat error', error); return; }
+
+    setChats(prev => {
+      const filtered = prev.filter(c => c.id !== id);
+      // aktiven Chat neu wählen
+      if (activeChatId === id) {
+        setActiveChatId(filtered[0]?.id || null);
+      }
+      return filtered;
+    });
   }
 
   async function toggleShare(id) {
     const chat = chats.find(c => c.id === id);
     if (!chat) return;
+
     const next = !chat.is_public;
-    const { data } = await supabase.from('chats').update({ is_public: next }).eq('id', id).select().single();
-    if (data) {
-      setChats(prev => prev.map(c => (c.id === id ? { ...c, is_public: next } : c)));
-      if (next && typeof window !== 'undefined') {
-        const link = `${window.location.origin}/share/${chat.public_id}`;
-        navigator.clipboard?.writeText(link).catch(() => {});
-        alert(`Öffentlicher Link kopiert:\n${link}`);
-      }
+    const { data, error } = await supabase
+      .from('chats')
+      .update({ is_public: next })
+      .eq('id', id)
+      .select('id, title, created_at, updated_at, messages, is_public, public_id, user_id')
+      .single();
+
+    if (error) { console.error('toggleShare error', error); return; }
+
+    setChats(prev => prev.map(c => (c.id === id ? { ...data, searchText: buildSearchText(data) } : c)));
+
+    if (next && typeof window !== 'undefined') {
+      const link = `${window.location.origin}/share/${data.public_id}`;
+      try { await navigator.clipboard?.writeText(link); } catch {}
+      alert(`Öffentlicher Link kopiert:\n${link}`);
     }
   }
 
@@ -83,26 +141,40 @@ export default function useChats(user) {
     const draft = [...(current?.messages || []), userMsg, aiMsg];
 
     setLoading(true);
-    setChats(prev => prev.map(c => (c.id === activeChatId ? { ...c, messages: draft } : c)));
+    // Optimistisches Update im State
+    setChats(prev => prev.map(c =>
+      c.id === activeChatId
+        ? { ...c, messages: draft, searchText: buildSearchText({ ...c, messages: draft }) }
+        : c
+    ));
 
     if (isFirst) {
-      // Titel „smart“ setzen – Fire-and-forget (wird ins UI zurückgeschrieben)
+      // Titel „smart“ setzen – fire-and-forget
       generateTitleSmart(userText).then(async (t) => {
-        const { data: upd } = await supabase.from('chats').update({ title: t }).eq('id', activeChatId).select().single();
-        if (upd) setChats(prev => prev.map(c => (c.id === activeChatId ? { ...c, title: t } : c)));
+        const { data: upd, error } = await supabase
+          .from('chats')
+          .update({ title: t, updated_at: new Date().toISOString() })
+          .eq('id', activeChatId)
+          .select('id, title, created_at, updated_at, messages, is_public, public_id, user_id')
+          .single();
+        if (!error && upd) {
+          setChats(prev => prev.map(c =>
+            c.id === activeChatId ? { ...upd, searchText: buildSearchText(upd) } : c
+          ));
+        }
       });
     }
 
-   const history = [
-  { role: 'system', content: 'Du bist ein freundlicher, deutschsprachiger KI-Chatassistent.' },
-  ...draft
-    .filter(m => m.sender === 'Du' || (m.sender === 'KI' && m.text)) // <-- KI nur mit Text
-    .map(m => m.sender === 'Du'
-      ? { role: 'user', content: m.text }
-      : { role: 'assistant', content: m.text }
-    )
-];
-
+    // Streaming-History aufbauen
+    const history = [
+      { role: 'system', content: SYSTEM_PROMPT },
+      ...draft
+        .filter(m => m.sender === 'Du' || (m.sender === 'KI' && m.text)) // KI nur mit Text
+        .map(m => m.sender === 'Du'
+          ? { role: 'user', content: m.text }
+          : { role: 'assistant', content: m.text }
+        )
+    ];
 
     try {
       const res = await fetch('/api/chatStream', {
@@ -130,11 +202,12 @@ export default function useChats(user) {
             const delta = json?.choices?.[0]?.delta?.content || '';
             if (delta) {
               full += delta;
+              // aktuelles KI-Message-Letztes Zeichen updaten
               setChats(prev => prev.map(c => {
                 if (c.id !== activeChatId) return c;
-                const msgs = [...c.messages];
-                msgs[msgs.length - 1] = { sender: 'KI', text: full };
-                return { ...c, messages: msgs };
+                const msgs = [...(c.messages || [])];
+                if (msgs.length) msgs[msgs.length - 1] = { sender: 'KI', text: full };
+                return { ...c, messages: msgs, searchText: buildSearchText({ ...c, messages: msgs }) };
               }));
             }
           } catch {}
@@ -142,21 +215,28 @@ export default function useChats(user) {
       }
 
       // Final persistieren
-      const finalMsgs = (() => {
-        const latest = chats.find(c => c.id === activeChatId);
-        const msgs = (latest?.messages || draft).map(m => ({ ...m }));
-        msgs[msgs.length - 1] = { sender: 'KI', text: full || ' ' };
-        return msgs;
-      })();
-
-      await supabase.from('chats').update({ messages: finalMsgs }).eq('id', activeChatId);
-    } catch {
-      // Fehlertext zeigen
+      let finalMsgs;
       setChats(prev => prev.map(c => {
         if (c.id !== activeChatId) return c;
-        const msgs = [...c.messages];
-        msgs[msgs.length - 1] = { sender: 'KI', text: 'Fehler bei KI' };
-        return { ...c, messages: msgs };
+        const msgs = [...(c.messages || draft)];
+        if (msgs.length) msgs[msgs.length - 1] = { sender: 'KI', text: (msgs[msgs.length - 1].text || full || ' ') };
+        finalMsgs = msgs;
+        return { ...c, messages: msgs, searchText: buildSearchText({ ...c, messages: msgs }) };
+      }));
+
+      await supabase
+        .from('chats')
+        .update({ messages: finalMsgs, updated_at: new Date().toISOString() })
+        .eq('id', activeChatId);
+
+    } catch (e) {
+      console.error('sendMessageStreaming error', e);
+      // Fehlertext anzeigen
+      setChats(prev => prev.map(c => {
+        if (c.id !== activeChatId) return c;
+        const msgs = [...(c.messages || [])];
+        if (msgs.length) msgs[msgs.length - 1] = { sender: 'KI', text: 'Fehler bei KI' };
+        return { ...c, messages: msgs, searchText: buildSearchText({ ...c, messages: msgs }) };
       }));
     }
 
