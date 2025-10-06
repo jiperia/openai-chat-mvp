@@ -5,6 +5,11 @@
 import C from '../../styles/tokens';
 import ChatListItem from '../chats/ChatListItem';
 
+import { useEffect, useState } from "react";
+import ChatSearchModal from "../chats/ChatSearchModal";
+import useChats from "../../hooks/useChats"; // dein bestehender Hook
+
+
 const SIDEBAR_W = 320;
 export const sidebarWidth = SIDEBAR_W;
 
@@ -46,6 +51,70 @@ export default function Sidebar({
       >
         + Neuer Chat
       </button>
+export default function Sidebar(props) {
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  // Hole Chats + eine Methode zum Öffnen/Selektieren
+  const chatsState = useChats(); // Struktur bei dir vorhanden
+  const chats = chatsState?.chats || [];
+  // Robust öffnen – wir probieren gängige Methoden und haben einen Fallback:
+  const openChat = (id) => {
+    if (typeof chatsState?.openChat === "function") return chatsState.openChat(id);
+    if (typeof chatsState?.selectChatById === "function") return chatsState.selectChatById(id);
+    if (typeof chatsState?.setActiveChatId === "function") return chatsState.setActiveChatId(id);
+    // Fallback: gebe Event ab, falls du global lauschst
+    window.dispatchEvent(new CustomEvent("open-chat", { detail: { id } }));
+  };
+
+  // Tastenkürzel ⌘K / Ctrl+K + ESC
+  useEffect(() => {
+    const onDown = (e) => {
+      const k = e.key.toLowerCase();
+      if ((e.metaKey || e.ctrlKey) && k === "k") {
+        e.preventDefault();
+        setSearchOpen((v) => !v);
+      }
+      if (k === "escape") setSearchOpen(false);
+    };
+    window.addEventListener("keydown", onDown);
+    return () => window.removeEventListener("keydown", onDown);
+  }, []);
+
+  return (
+    <aside className="w-64 bg-neutral-950 text-neutral-200 p-2 space-y-1">
+      {/* dein bestehender Neuer-Chat-Button */}
+      <button className="w-full px-3 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700">
+        Neuer Chat
+      </button>
+
+      {/* NEU: Chats suchen */}
+      <button
+        onClick={() => setSearchOpen(true)}
+        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-neutral-800"
+        title="Chats suchen"
+      >
+        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none">
+          <path d="M21 21l-4.3-4.3M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15z" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+        </svg>
+        <span>Chats suchen</span>
+        <span className="ml-auto text-xs opacity-60">⌘K</span>
+      </button>
+
+      {/* …restliche Sidebar… */}
+
+      {/* Modal einhängen */}
+      <ChatSearchModal
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        chats={chats}
+        onSelect={(id) => {
+          setSearchOpen(false);
+          openChat(id);
+        }}
+      />
+    </aside>
+  );
+}
 
 
 {/* Spacer: Abstand zwischen Button und Chatliste */}
