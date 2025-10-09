@@ -1,6 +1,5 @@
 // hooks/useChats.js
 // Zweck: Alle Chat-Zustände & Aktionen (Laden, CRUD, Teilen, Streaming, Auto-Titel)
-// Extra: Pro Chat wird `searchText` gepflegt (Titel + letzte Messages), damit die Suche Inhalte findet.
 
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../supabaseClient';
@@ -31,9 +30,9 @@ export default function useChats(user) {
       setLoading(true);
       const { data, error } = await supabase
         .from('chats')
-        .select('*')                               // nur vorhandene Spalten
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false }); // sicherer Sortier-Key
+        .select('id,title,created_at,messages,is_public,public_id,user_id')
+        .eq('user_id', user.id) // nur eigene Chats
+        .order('created_at', { ascending: false });
 
       if (cancelled) return;
       setLoading(false);
@@ -45,19 +44,24 @@ export default function useChats(user) {
         return;
       }
 
-      const mapped = (data || []).map(c => ({
-        ...c,
-        title: c.title || 'Neuer Chat',
-        messages: Array.isArray(c.messages) ? c.messages : [],
-        searchText: buildSearchText(c),
-      }));
+      const mapped = (data || []).map(c => {
+        const normalized = {
+          ...c,
+          title: c.title || 'Neuer Chat',
+          messages: Array.isArray(c.messages) ? c.messages : [],
+        };
+        return { ...normalized, searchText: buildSearchText(normalized) };
+      });
 
       setChats(mapped);
-      if (mapped.length) setActiveChatId(mapped[0].id);
+
+      // Nur setzen, wenn noch keiner aktiv ist
+      if (!activeChatId && mapped.length) setActiveChatId(mapped[0].id);
     })();
 
     return () => { cancelled = true; };
-  }, [user]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]); // nur auf die UID reagieren
 
   // ---------- Abgeleitete Werte ----------
   const activeMessages = useMemo(
@@ -67,46 +71,61 @@ export default function useChats(user) {
 
   // ---------- Aktionen ----------
   async function newChat() {
+    if (!user?.id) return;
+
     const payload = { title: 'Neuer Chat', messages: [], user_id: user.id };
     const { data, error } = await supabase
       .from('chats')
-      .insert([payload])
-      .select('*')
+      .insert(payload)
+      .select('id,title,created_at,messages,is_public,public_id,user_id')
       .single();
+
     if (error) { console.error('newChat error', error); return; }
 
     const created = {
       ...data,
       title: data.title || 'Neuer Chat',
       messages: Array.isArray(data.messages) ? data.messages : [],
-      searchText: buildSearchText(data),
     };
+    created.searchText = buildSearchText(created);
+
     setChats(prev => [created, ...prev]);
     setActiveChatId(created.id);
   }
 
   async function renameChat(id, title) {
     const name = (title ?? '').trim();
-    if (!name) return;
+    if (!name || !user?.id) return;
 
     const { data, error } = await supabase
       .from('chats')
       .update({ title: name })
       .eq('id', id)
-      .select('*')
+      .eq('user_id', user.id) // RLS-freundlich
+      .select('id,title,created_at,messages,is_public,public_id,user_id')
       .single();
 
     if (error) { console.error('renameChat error', error); return; }
 
-    setChats(prev => prev.map(c =>
-      c.id === id
-        ? { ...data, title: data.title || 'Neuer Chat', messages: Array.isArray(data.messages) ? data.messages : [], searchText: buildSearchText(data) }
-        : c
-    ));
+    const updated = {
+      ...data,
+      title: data.title || 'Neuer Chat',
+      messages: Array.isArray(data.messages) ? data.messages : [],
+    };
+    updated.searchText = buildSearchText(updated);
+
+    setChats(prev => prev.map(c => (c.id === id ? updated : c)));
   }
 
   async function deleteChat(id) {
-    const { error } = await supabase.from('chats').delete().eq('id', id);
+    if (!user?.id) return;
+
+    const { error } = await supabase
+      .from('chats')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', user.id); // RLS-freundlich
+
     if (error) { console.error('deleteChat error', error); return; }
 
     setChats(prev => {
@@ -116,7 +135,7 @@ export default function useChats(user) {
     });
   }
 
-  // Defensiv: Sharing nur, wenn Felder existieren; sonst freundlich abfangen
+  // Sharing nur, wenn Spalten existieren – sonst freundlich abfangen
   async function toggleShare(id) {
     const chat = chats.find(c => c.id === id);
     if (!chat) return;
@@ -131,26 +150,27 @@ export default function useChats(user) {
       .from('chats')
       .update({ is_public: next })
       .eq('id', id)
-      .select('*')
+      .eq('user_id', user.id)
+      .select('id,title,created_at,messages,is_public,public_id,user_id')
       .single();
 
     if (error) { console.error('toggleShare error', error); return; }
 
-    setChats(prev => prev.map(c =>
-      c.id === id
-        ? { ...data, searchText: buildSearchText(data) }
-        : c
-    ));
+    const updated = { ...data };
+    updated.searchText = buildSearchText(updated);
+
+    setChats(prev => prev.map(c => (c.id === id ? updated : c)));
 
     if (next && typeof window !== 'undefined') {
-      const link = `${window.location.origin}/share/${data.public_id}`;
+      const origin = window.location?.origin || '';
+      const link = `${origin}/share/${data.public_id}`;
       try { await navigator.clipboard?.writeText(link); } catch {}
       alert(`Öffentlicher Link kopiert:\n${link}`);
     }
   }
 
   async function sendMessageStreaming(userText) {
-    if (!activeChatId || !userText?.trim()) return;
+    if (!activeChatId || !userText?.trim() || !user?.id) return;
 
     const current = chats.find(c => c.id === activeChatId);
     const isFirst = (current?.messages?.length ?? 0) === 0;
@@ -160,6 +180,7 @@ export default function useChats(user) {
     const draft = [...(current?.messages || []), userMsg, aiMsg];
 
     setLoading(true);
+
     // Optimistisches Update im State
     setChats(prev => prev.map(c =>
       c.id === activeChatId
@@ -174,15 +195,18 @@ export default function useChats(user) {
           .from('chats')
           .update({ title: t })
           .eq('id', activeChatId)
-          .select('*')
+          .eq('user_id', user.id)
+          .select('id,title,created_at,messages,is_public,public_id,user_id')
           .single();
 
         if (!error && upd) {
-          setChats(prev => prev.map(c =>
-            c.id === activeChatId
-              ? { ...upd, title: upd.title || 'Neuer Chat', messages: Array.isArray(upd.messages) ? upd.messages : [], searchText: buildSearchText(upd) }
-              : c
-          ));
+          const normalized = {
+            ...upd,
+            title: upd.title || 'Neuer Chat',
+            messages: Array.isArray(upd.messages) ? upd.messages : [],
+          };
+          normalized.searchText = buildSearchText(normalized);
+          setChats(prev => prev.map(c => (c.id === activeChatId ? normalized : c)));
         }
       });
     }
@@ -191,7 +215,7 @@ export default function useChats(user) {
     const history = [
       { role: 'system', content: SYSTEM_PROMPT },
       ...draft
-        .filter(m => m.sender === 'Du' || (m.sender === 'KI' && m.text)) // KI nur mit Text
+        .filter(m => m.sender === 'Du' || (m.sender === 'KI' && m.text))
         .map(m => m.sender === 'Du'
           ? { role: 'user', content: m.text }
           : { role: 'assistant', content: m.text }
@@ -249,11 +273,11 @@ export default function useChats(user) {
       await supabase
         .from('chats')
         .update({ messages: finalMsgs })
-        .eq('id', activeChatId);
+        .eq('id', activeChatId)
+        .eq('user_id', user.id);
 
     } catch (e) {
       console.error('sendMessageStreaming error', e);
-      // Fehlertext anzeigen
       setChats(prev => prev.map(c => {
         if (c.id !== activeChatId) return c;
         const msgs = [...(c.messages || [])];
