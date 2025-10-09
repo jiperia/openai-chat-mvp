@@ -1,5 +1,5 @@
 // components/chat/ChatWindow.jsx
-// Zweck: Hauptbereich – Header, Nachrichtenliste, InputBar.
+// Zweck: Hauptbereich – Header, Nachrichtenliste, InputBar,
 // Props: messages (Array), loading (bool), onSend(text)
 
 import { useRef, useEffect, useState } from 'react';
