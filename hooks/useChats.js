@@ -31,8 +31,8 @@ export default function useChats(user) {
       const { data, error } = await supabase
         .from('chats')
         .select('id,title,created_at,messages,is_public,public_id,user_id')
-        .eq('user_id', user.id) // nur eigene Chats
-        .order('created_at', { ascending: false });
+        .eq('user_id', user.id)                           // nur eigene Chats
+        .order('created_at', { ascending: false });       // stabil sortieren
 
       if (cancelled) return;
       setLoading(false);
@@ -53,21 +53,56 @@ export default function useChats(user) {
         return { ...normalized, searchText: buildSearchText(normalized) };
       });
 
+      // Debug: was kommt wirklich aus der DB?
+      console.log('[useChats] loaded chats:', mapped.map(x => ({
+        id: x.id, title: x.title, msgs: x.messages.length
+      })));
+
       setChats(mapped);
 
-      // Nur setzen, wenn noch keiner aktiv ist
-      if (!activeChatId && mapped.length) setActiveChatId(mapped[0].id);
+      // Active nur setzen, wenn er leer ist ODER nicht mehr existiert
+      if (!activeChatId || !mapped.some(c => c.id === activeChatId)) {
+        if (mapped.length) setActiveChatId(mapped[0].id);
+        else setActiveChatId(null);
+      }
     })();
 
     return () => { cancelled = true; };
+    // nur reagieren, wenn sich die UID ändert
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]); // nur auf die UID reagieren
+  }, [user?.id]);
 
   // ---------- Abgeleitete Werte ----------
   const activeMessages = useMemo(
     () => chats.find(c => c.id === activeChatId)?.messages || [],
     [chats, activeChatId]
   );
+
+  // ---------- Hilfsfunktion: harter Refresh aus DB ----------
+  async function refreshChats() {
+    if (!user?.id) return;
+    const { data, error } = await supabase
+      .from('chats')
+      .select('id,title,created_at,messages,is_public,public_id,user_id')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+
+    if (error) { console.warn('refreshChats error', error); return; }
+
+    const mapped = (data || []).map(c => {
+      const normalized = {
+        ...c,
+        title: c.title || 'Neuer Chat',
+        messages: Array.isArray(c.messages) ? c.messages : [],
+      };
+      return { ...normalized, searchText: buildSearchText(normalized) };
+    });
+
+    setChats(mapped);
+    if (!activeChatId || !mapped.some(c => c.id === activeChatId)) {
+      setActiveChatId(mapped[0]?.id ?? null);
+    }
+  }
 
   // ---------- Aktionen ----------
   async function newChat() {
@@ -91,6 +126,9 @@ export default function useChats(user) {
 
     setChats(prev => [created, ...prev]);
     setActiveChatId(created.id);
+
+    // Safety: einmal nachziehen, was wirklich in der DB steht
+    await refreshChats();
   }
 
   async function renameChat(id, title) {
@@ -115,6 +153,7 @@ export default function useChats(user) {
     updated.searchText = buildSearchText(updated);
 
     setChats(prev => prev.map(c => (c.id === id ? updated : c)));
+    await refreshChats();
   }
 
   async function deleteChat(id) {
@@ -124,7 +163,7 @@ export default function useChats(user) {
       .from('chats')
       .delete()
       .eq('id', id)
-      .eq('user_id', user.id); // RLS-freundlich
+      .eq('user_id', user.id);
 
     if (error) { console.error('deleteChat error', error); return; }
 
@@ -133,9 +172,10 @@ export default function useChats(user) {
       if (activeChatId === id) setActiveChatId(filtered[0]?.id || null);
       return filtered;
     });
+    await refreshChats();
   }
 
-  // Sharing nur, wenn Spalten existieren – sonst freundlich abfangen
+  // Teilen nur, wenn Spalten existieren (MVP-Guard)
   async function toggleShare(id) {
     const chat = chats.find(c => c.id === id);
     if (!chat) return;
@@ -158,7 +198,6 @@ export default function useChats(user) {
 
     const updated = { ...data };
     updated.searchText = buildSearchText(updated);
-
     setChats(prev => prev.map(c => (c.id === id ? updated : c)));
 
     if (next && typeof window !== 'undefined') {
@@ -276,6 +315,9 @@ export default function useChats(user) {
         .eq('id', activeChatId)
         .eq('user_id', user.id);
 
+      // Nach Persist: frische Wahrheit laden
+      await refreshChats();
+
     } catch (e) {
       console.error('sendMessageStreaming error', e);
       setChats(prev => prev.map(c => {
@@ -300,6 +342,7 @@ export default function useChats(user) {
     renameChat,
     deleteChat,
     toggleShare,
-    sendMessageStreaming
+    sendMessageStreaming,
+    refreshChats,
   };
 }
