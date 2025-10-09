@@ -31,8 +31,8 @@ export default function useChats(user) {
       const { data, error } = await supabase
         .from('chats')
         .select('id,title,created_at,messages,is_public,public_id,user_id')
-        .eq('user_id', user.id)                           // nur eigene Chats
-        .order('created_at', { ascending: false });       // stabil sortieren
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
 
       if (cancelled) return;
       setLoading(false);
@@ -53,23 +53,17 @@ export default function useChats(user) {
         return { ...normalized, searchText: buildSearchText(normalized) };
       });
 
-      // Debug: was kommt wirklich aus der DB?
       console.log('[useChats] loaded chats:', mapped.map(x => ({
         id: x.id, title: x.title, msgs: x.messages.length
       })));
 
       setChats(mapped);
-
-      // Active nur setzen, wenn er leer ist ODER nicht mehr existiert
       if (!activeChatId || !mapped.some(c => c.id === activeChatId)) {
-        if (mapped.length) setActiveChatId(mapped[0].id);
-        else setActiveChatId(null);
+        setActiveChatId(mapped[0]?.id ?? null);
       }
     })();
 
     return () => { cancelled = true; };
-    // nur reagieren, wenn sich die UID ändert
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
   // ---------- Abgeleitete Werte ----------
@@ -126,8 +120,6 @@ export default function useChats(user) {
 
     setChats(prev => [created, ...prev]);
     setActiveChatId(created.id);
-
-    // Safety: einmal nachziehen, was wirklich in der DB steht
     await refreshChats();
   }
 
@@ -139,7 +131,7 @@ export default function useChats(user) {
       .from('chats')
       .update({ title: name })
       .eq('id', id)
-      .eq('user_id', user.id) // RLS-freundlich
+      .eq('user_id', user.id)
       .select('id,title,created_at,messages,is_public,public_id,user_id')
       .single();
 
@@ -175,7 +167,6 @@ export default function useChats(user) {
     await refreshChats();
   }
 
-  // Teilen nur, wenn Spalten existieren (MVP-Guard)
   async function toggleShare(id) {
     const chat = chats.find(c => c.id === id);
     if (!chat) return;
@@ -208,10 +199,13 @@ export default function useChats(user) {
     }
   }
 
+  // ---------- Streaming mit Sofort-Persistierung ----------
   async function sendMessageStreaming(userText) {
     if (!activeChatId || !userText?.trim() || !user?.id) return;
 
-    const current = chats.find(c => c.id === activeChatId);
+    // Chat-ID fixieren
+    const chatId = activeChatId;
+    const current = chats.find(c => c.id === chatId);
     const isFirst = (current?.messages?.length ?? 0) === 0;
 
     const userMsg = { sender: 'Du', text: userText };
@@ -219,38 +213,47 @@ export default function useChats(user) {
     const draft = [...(current?.messages || []), userMsg, aiMsg];
 
     setLoading(true);
-
-    // Optimistisches Update im State
+    // Sofort im State anzeigen
     setChats(prev => prev.map(c =>
-      c.id === activeChatId
+      c.id === chatId
         ? { ...c, messages: draft, searchText: buildSearchText({ ...c, messages: draft }) }
         : c
     ));
 
-    if (isFirst) {
-      // Titel „smart“ setzen – fire-and-forget
-      generateTitleSmart(userText).then(async (t) => {
-        const { data: upd, error } = await supabase
-          .from('chats')
-          .update({ title: t })
-          .eq('id', activeChatId)
-          .eq('user_id', user.id)
-          .select('id,title,created_at,messages,is_public,public_id,user_id')
-          .single();
+    // Sofort in DB speichern, falls Fenster gewechselt wird
+    try {
+      await supabase
+        .from('chats')
+        .update({ messages: draft })
+        .eq('id', chatId)
+        .eq('user_id', user.id);
+    } catch (e) {
+      console.warn('persist draft failed', e);
+    }
 
-        if (!error && upd) {
-          const normalized = {
-            ...upd,
-            title: upd.title || 'Neuer Chat',
-            messages: Array.isArray(upd.messages) ? upd.messages : [],
-          };
-          normalized.searchText = buildSearchText(normalized);
-          setChats(prev => prev.map(c => (c.id === activeChatId ? normalized : c)));
-        }
+    if (isFirst) {
+      generateTitleSmart(userText).then(async (t) => {
+        try {
+          const { data: upd, error } = await supabase
+            .from('chats')
+            .update({ title: t })
+            .eq('id', chatId)
+            .eq('user_id', user.id)
+            .select('id,title,created_at,messages,is_public,public_id,user_id')
+            .single();
+          if (!error && upd) {
+            const normalized = {
+              ...upd,
+              title: upd.title || 'Neuer Chat',
+              messages: Array.isArray(upd.messages) ? upd.messages : [],
+            };
+            normalized.searchText = buildSearchText(normalized);
+            setChats(prev => prev.map(c => (c.id === chatId ? normalized : c)));
+          }
+        } catch {}
       });
     }
 
-    // Streaming-History aufbauen
     const history = [
       { role: 'system', content: SYSTEM_PROMPT },
       ...draft
@@ -285,26 +288,24 @@ export default function useChats(user) {
           try {
             const json = JSON.parse(payload);
             const delta = json?.choices?.[0]?.delta?.content || '';
-            if (delta) {
-              full += delta;
-              // letztes KI-Message während des Streams updaten
-              setChats(prev => prev.map(c => {
-                if (c.id !== activeChatId) return c;
-                const msgs = [...(c.messages || [])];
-                if (msgs.length) msgs[msgs.length - 1] = { sender: 'KI', text: full };
-                return { ...c, messages: msgs, searchText: buildSearchText({ ...c, messages: msgs }) };
-              }));
-            }
+            if (!delta) continue;
+            full += delta;
+            setChats(prev => prev.map(c => {
+              if (c.id !== chatId) return c;
+              const msgs = [...(c.messages || [])];
+              if (msgs.length) msgs[msgs.length - 1] = { sender: 'KI', text: full };
+              return { ...c, messages: msgs, searchText: buildSearchText({ ...c, messages: msgs }) };
+            }));
           } catch {}
         }
       }
 
-      // Final persistieren
+      // Finale Persistierung
       let finalMsgs;
       setChats(prev => prev.map(c => {
-        if (c.id !== activeChatId) return c;
+        if (c.id !== chatId) return c;
         const msgs = [...(c.messages || draft)];
-        if (msgs.length) msgs[msgs.length - 1] = { sender: 'KI', text: (msgs[msgs.length - 1].text || full || ' ') };
+        if (msgs.length) msgs[msgs.length - 1] = { sender: 'KI', text: full || ' ' };
         finalMsgs = msgs;
         return { ...c, messages: msgs, searchText: buildSearchText({ ...c, messages: msgs }) };
       }));
@@ -312,16 +313,13 @@ export default function useChats(user) {
       await supabase
         .from('chats')
         .update({ messages: finalMsgs })
-        .eq('id', activeChatId)
+        .eq('id', chatId)
         .eq('user_id', user.id);
-
-      // Nach Persist: frische Wahrheit laden
-      await refreshChats();
 
     } catch (e) {
       console.error('sendMessageStreaming error', e);
       setChats(prev => prev.map(c => {
-        if (c.id !== activeChatId) return c;
+        if (c.id !== chatId) return c;
         const msgs = [...(c.messages || [])];
         if (msgs.length) msgs[msgs.length - 1] = { sender: 'KI', text: 'Fehler bei KI' };
         return { ...c, messages: msgs, searchText: buildSearchText({ ...c, messages: msgs }) };
@@ -337,7 +335,6 @@ export default function useChats(user) {
     setActiveChatId,
     activeMessages,
     loading,
-    // actions
     newChat,
     renameChat,
     deleteChat,
